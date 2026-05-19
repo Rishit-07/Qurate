@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const fitScoreSchema = new mongoose.Schema(
     {
-        useIdr: {
+        userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
         },

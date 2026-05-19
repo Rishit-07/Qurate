@@ -1,5 +1,8 @@
-import User from "../models/User.js";
+import User from "../models/user.js";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
+const getJwtSecret = () => process.env.JWT_SECRET || process.env.SECRET_KEY;
 
 
 export const register = async (req, res) => {
@@ -25,13 +28,14 @@ export const register = async (req, res) => {
             stack,
             experienceLevel
         });
+        newUser.password = await bcrypt.hash(password, 10);
         await newUser.save();
         const token = jwt.sign(
             {
                 id: newUser._id,
                 email: newUser.email
             },
-            process.env.JWT_SECRET,
+            getJwtSecret(),
             {
                 expiresIn: "7d"
             }
@@ -67,7 +71,7 @@ export const login = async (req, res) => {
                 message: "User not found"
             });
         }
-        const isMatched = await existingUser.matchPassword(password);
+        const isMatched = await bcrypt.compare(password, existingUser.password);
 
         if (!isMatched) {
             return res.status(401).json({
@@ -79,7 +83,7 @@ export const login = async (req, res) => {
                 id: existingUser._id,
                 email: existingUser.email
             },
-            process.env.JWT_SECRET,
+            getJwtSecret(),
             {
                 expiresIn: "7d"
             }

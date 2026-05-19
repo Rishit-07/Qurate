@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 
+const getJwtSecret = () => process.env.JWT_SECRET || process.env.SECRET_KEY;
+
 const protect = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -11,7 +13,7 @@ const protect = async (req, res, next) => {
     try {
         const decoded = jwt.verify(
             token,
-            process.env.JWT_SECRET
+            getJwtSecret()
         );
         req.user = decoded;
         next();
