@@ -1,23 +1,40 @@
-import { fetchGithubIssues } from "../services/githubServices.js";
+import { fetchGithubIssues, searchGithubIssues } from "../services/githubServices.js";
 import { scoreIssueForUser } from "../services/aiScoringService.js";
 import User from "../models/user.js";
 import Issue from "../models/issue.js";
 import mongoose from "mongoose";
 
+export const syncIssuesToDatabase = async () => {
+    const issues = await fetchGithubIssues();
+
+    for (const issue of issues) {
+        const { stacks, labels, ...issueFields } = issue;
+
+        await Issue.findOneAndUpdate(
+            { github_id: issue.github_id },
+            {
+                $set: {
+                    ...issueFields,
+                    synced_at: new Date(),
+                },
+                $addToSet: {
+                    stacks: { $each: stacks },
+                    labels: { $each: labels },
+                },
+            },
+            { upsert: true, new: true }
+        );
+    }
+
+    return issues.length;
+};
+
 export const syncIssues = async (req, res) => {
     try {
-        const issues = await fetchGithubIssues();
-
-        for (const issue of issues) {
-            await Issue.findOneAndUpdate(
-                { github_id: issue.github_id },
-                { $set: issue },
-                { upsert: true, new: true }
-            );
-        }
+        const syncedCount = await syncIssuesToDatabase();
 
         return res.status(200).json({
-            message: `Synced ${issues.length} issues successfully`,
+            message: `Synced ${syncedCount} issues successfully`,
         });
 
     } catch (err) {
@@ -49,6 +66,49 @@ export const getIssues = async (req, res) => {
             hasMore: page * 10 < total,
         });
 
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+export const searchIssues = async (req, res) => {
+    try {
+        const query = req.query.q?.trim();
+
+        if (!query) {
+            return res.status(400).json({
+                error: "Search query is required"
+            });
+        }
+
+        const issues = await searchGithubIssues(query);
+        const savedIssues = [];
+
+        for (const issue of issues) {
+            const { stacks, labels, ...issueFields } = issue;
+            const savedIssue = await Issue.findOneAndUpdate(
+                { github_id: issue.github_id },
+                {
+                    $set: {
+                        ...issueFields,
+                        synced_at: new Date(),
+                    },
+                    $addToSet: {
+                        stacks: { $each: stacks },
+                        labels: { $each: labels },
+                    },
+                },
+                { upsert: true, new: true }
+            );
+
+            savedIssues.push(savedIssue);
+        }
+
+        return res.status(200).json({
+            issues: savedIssues,
+            total: savedIssues.length,
+            query,
+        });
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }
