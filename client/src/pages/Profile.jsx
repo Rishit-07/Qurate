@@ -443,7 +443,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                       <span className="text-sm font-medium text-[#1A1A18]/70">Email</span>
                       <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="you@example.com" />
                     </label>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex gap-2 items-center">
                       <button type="button" onClick={async () => {
                         const token = getToken();
                         setEmailSaving(true); setEmailMsg({ type: '', text: '' });
@@ -466,8 +466,8 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                           setEmailSaving(false);
                           setTimeout(() => setEmailMsg({ type: '', text: '' }), 4000);
                         }
-                      }} className="h-9 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0]">Update email</button>
-                      {emailMsg.text && <p className={`text-sm font-medium ${emailMsg.type === 'success' ? 'text-[#2D6A4F]' : 'text-red-700'}`}>{emailMsg.text}</p>}
+                      }} className="h-9 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0] min-w-max">Update email</button>
+                      {emailMsg.text && <p className={`ml-3 text-sm font-medium ${emailMsg.type === 'success' ? 'text-[#2D6A4F]' : 'text-red-700'}`}>{emailMsg.text}</p>}
                     </div>
                   </div>
 
@@ -476,7 +476,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                       <span className="text-sm font-medium text-[#1A1A18]/70">New password <span className="text-xs font-normal text-[#1A1A18]/45">(enter to change)</span></span>
                       <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="Enter a new password" />
                     </label>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2 flex gap-2 items-center">
                       <button type="button" onClick={async () => {
                         if (!newPassword || newPassword.length < 6) { setPwdMsg({ type: 'error', text: 'Password must be at least 6 characters.' }); setTimeout(() => setPwdMsg({ type: '', text: '' }), 3000); return }
                         const token = getToken();
@@ -497,8 +497,8 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                           setPwdSaving(false);
                           setTimeout(() => setPwdMsg({ type: '', text: '' }), 4000);
                         }
-                      }} className="h-9 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0]">Change password</button>
-                      {pwdMsg.text && <p className={`text-sm font-medium ${pwdMsg.type === 'success' ? 'text-[#2D6A4F]' : 'text-red-700'}`}>{pwdMsg.text}</p>}
+                      }} className="h-9 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0] min-w-max">Change password</button>
+                      {pwdMsg.text && <p className={`ml-3 text-sm font-medium ${pwdMsg.type === 'success' ? 'text-[#2D6A4F]' : 'text-red-700'}`}>{pwdMsg.text}</p>}
                     </div>
                   </div>
                 </div>
@@ -511,7 +511,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
               </p>
             )}
 
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3 pt-6">
               <button type="submit" disabled={saving} className="h-11 flex-1 rounded-md bg-[#2D6A4F] px-5 text-sm font-bold text-[#F7F5F0] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Saving…' : 'Save changes'}</button>
               <button type="button" onClick={onSignOut} className="h-11 rounded-md border border-[#1A1A18]/15 px-5 text-sm font-semibold text-[#1A1A18]/65 transition hover:border-red-700/30 hover:text-red-800">Sign out</button>
             </div>
