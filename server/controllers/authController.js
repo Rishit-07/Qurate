@@ -1,6 +1,7 @@
 import User from "../models/user.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+// token-based reset flow removed; no crypto or dotenv needed here
 
 const getJwtSecret = () => process.env.JWT_SECRET || process.env.SECRET_KEY;
 
@@ -98,4 +99,35 @@ export const login = async (req, res) => {
         });
     }
 };
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, password } = req.body
+    if (!email || !password) return res.status(400).json({ message: 'Email and password required' })
+    const user = await User.findOne({ email })
+    if (!user) return res.status(400).json({ message: 'User not found' })
+    const salt = await bcrypt.genSalt(10)
+    user.password = await bcrypt.hash(password, salt)
+    await user.save()
+    return res.status(200).json({ message: 'Password has been reset successfully' })
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+export const changeEmail = async (req, res) => {
+    try {
+        const { email, newEmail } = req.body
+        if (!email || !newEmail) return res.status(400).json({ message: 'Email and newEmail required' })
+        const user = await User.findOne({ email })
+        if (!user) return res.status(400).json({ message: 'User not found' })
+        const existing = await User.findOne({ email: newEmail })
+        if (existing) return res.status(400).json({ message: 'New email already in use' })
+        user.email = newEmail
+        await user.save()
+        return res.status(200).json({ message: 'Email updated successfully' })
+    } catch (err) {
+        return res.status(500).json({ error: err.message })
+    }
+}
 
