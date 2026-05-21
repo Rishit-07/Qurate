@@ -23,8 +23,7 @@ function App() {
     return savedUser ? JSON.parse(savedUser) : null
   })
   const [bookmarks, setBookmarks] = useState(() => {
-    const savedBookmarks = localStorage.getItem(BOOKMARKS_STORAGE_KEY)
-    return savedBookmarks ? JSON.parse(savedBookmarks) : []
+    return readStoredBookmarks()
   })
   const [pendingBookmarkIssue, setPendingBookmarkIssue] = useState(null)
   const [bookmarkStatus, setBookmarkStatus] = useState('planned')
@@ -49,6 +48,10 @@ function App() {
     setView(nextView)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  useEffect(() => {
+    localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks))
+  }, [bookmarks])
 
   useEffect(() => {
     const token = localStorage.getItem('qurateToken')
@@ -135,7 +138,6 @@ function App() {
           ? { ...item, bookmarkStatus: status }
           : item,
       )
-      localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(nextBookmarks))
       return nextBookmarks
     })
 
@@ -171,7 +173,6 @@ function App() {
       const exists = current.some((item) => getIssueId(item) === issueId)
       if (exists) return current
       const nextBookmarks = [{ ...issue, bookmarkStatus: status }, ...current]
-      localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(nextBookmarks))
       return nextBookmarks
     })
 
@@ -186,7 +187,6 @@ function App() {
     if (isBookmarked) {
       setBookmarks((current) => {
         const nextBookmarks = current.filter((item) => getIssueId(item) !== issueId)
-        localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(nextBookmarks))
         return nextBookmarks
       })
       await removeContribution(issue)
@@ -267,6 +267,18 @@ function App() {
 
 function getIssueId(issue) {
   return issue._id || issue.github_id
+}
+
+function readStoredBookmarks() {
+  try {
+    const savedBookmarks = localStorage.getItem(BOOKMARKS_STORAGE_KEY)
+    if (!savedBookmarks) return []
+
+    const parsed = JSON.parse(savedBookmarks)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 function BookmarkStatusModal({ issue, status, onStatusChange, onCancel, onConfirm, options }) {
