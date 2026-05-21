@@ -20,6 +20,10 @@ function AuthPage({ onLogin, onNavigate }) {
   const [showPassword, setShowPassword] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const typingTimer = useRef(null)
+  const [resetToken, setResetToken] = useState('')
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetConfirm, setResetConfirm] = useState('')
+  const [resetMsg, setResetMsg] = useState({ type: '', message: '' })
 
   const isRegistering = mode === 'register'
 
@@ -47,6 +51,27 @@ function AuthPage({ onLogin, onNavigate }) {
     return () => {
       if (typingTimer.current) clearTimeout(typingTimer.current)
     }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const token = params.get('resetToken')
+      if (token) {
+        // schedule state updates async to avoid cascading synchronous renders
+        setTimeout(() => {
+          setResetToken(token)
+          setMode('forgot')
+        }, 0)
+
+        // remove token from URL for cleanliness
+        if (window.history && window.history.replaceState) {
+          const url = new URL(window.location.href)
+          url.searchParams.delete('resetToken')
+          window.history.replaceState({}, document.title, url.toString())
+        }
+      }
+    } catch { void 0 }
   }, [])
 
   function toggleStack(tech) {
@@ -394,6 +419,48 @@ function AuthPage({ onLogin, onNavigate }) {
                   <button type="button" onClick={() => switchMode('login')} className="h-12 rounded-md border border-[#1A1A18]/15 px-5 text-sm font-semibold">Back</button>
                   <button type="button" onClick={() => onNavigate?.('auth')} className="h-12 rounded-md border border-[#1A1A18]/15 px-5 text-sm font-semibold">Back to home</button>
                 </div>
+              </div>
+              <div className="mt-6 rounded-md border-t pt-4">
+                <p className="mb-2 text-sm font-semibold">Have a reset token? Enter it below with your new password.</p>
+                <label className="block text-left">
+                  <span className="text-sm font-medium text-[#1A1A18]/70">Reset token</span>
+                  <input type="text" value={resetToken} onChange={e => setResetToken(e.target.value)} className="mt-2 h-12 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none" placeholder="Paste the token from email" />
+                </label>
+                <label className="block text-left mt-3">
+                  <span className="text-sm font-medium text-[#1A1A18]/70">New password</span>
+                  <input type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} className="mt-2 h-12 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none" placeholder="Enter new password" />
+                </label>
+                <label className="block text-left mt-3">
+                  <span className="text-sm font-medium text-[#1A1A18]/70">Confirm password</span>
+                  <input type="password" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} className="mt-2 h-12 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none" placeholder="Repeat new password" />
+                </label>
+                <div className="mt-3 flex gap-3">
+                  <button type="button" onClick={async () => {
+                    setResetMsg({ type: '', message: '' })
+                    if (!resetToken) { setResetMsg({ type: 'error', message: 'Enter the reset token.' }); return }
+                    if (!resetPassword || resetPassword.length < 6) { setResetMsg({ type: 'error', message: 'Password must be at least 6 characters.' }); return }
+                    if (resetPassword !== resetConfirm) { setResetMsg({ type: 'error', message: 'Passwords do not match.' }); return }
+                    setIsSubmitting(true)
+                    try {
+                      const res = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: resetToken, password: resetPassword })
+                      })
+                      const data = await res.json()
+                      if (!res.ok) throw new Error(data.message || data.error || 'Reset failed')
+                      setResetMsg({ type: 'success', message: data.message || 'Password reset successful. Please sign in.' })
+                      setMode('login')
+                      setResetToken('')
+                      setResetPassword('')
+                      setResetConfirm('')
+                    } catch (err) {
+                      setResetMsg({ type: 'error', message: err.message || 'Could not reset password.' })
+                    } finally {
+                      setIsSubmitting(false)
+                    }
+                  }} className="h-11 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0]">Reset password</button>
+                  <button type="button" onClick={() => { setResetToken(''); setResetPassword(''); setResetConfirm(''); setResetMsg({ type: '', message: '' }) }} className="h-11 rounded-md border px-4 text-sm font-semibold">Clear</button>
+                </div>
+                {resetMsg.message && <p className={`mt-3 rounded-md border px-4 py-3 text-sm font-medium ${resetMsg.type === 'success' ? 'border-[#2D6A4F]/25 bg-[#2D6A4F]/10 text-[#2D6A4F]' : 'border-red-700/20 bg-red-700/10 text-red-800'}`}>{resetMsg.message}</p>}
               </div>
             </div>
           )}
