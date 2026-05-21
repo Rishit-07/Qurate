@@ -54,8 +54,7 @@ function AuthPage({ onLogin, onNavigate }) {
     }
   }, [])
 
-  useEffect(() => {
-  }, [])
+ 
 
   function toggleStack(tech) {
     setSelectedStack((current) =>
