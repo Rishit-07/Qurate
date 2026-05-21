@@ -44,6 +44,12 @@ app.get("/", (req, res) => {
     res.send("API is running");
 });
 
+// Health endpoint (safe): reports whether the server sees a JWT secret (does NOT expose the secret)
+app.get('/health', (req, res) => {
+    const jwtConfigured = !!(process.env.JWT_SECRET || process.env.SECRET_KEY);
+    res.json({ ok: true, jwtConfigured });
+});
+
 app.use("/api/auth",   authRoutes);
 app.use("/api/issues", issueRoutes);
 app.use("/api/github", githubRoutes);
