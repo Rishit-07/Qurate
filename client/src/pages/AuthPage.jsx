@@ -9,7 +9,7 @@ const initialForm = {
   experienceLevel: 'beginner',
 }
 
-function AuthPage({ onLogin }) {
+function AuthPage({ onLogin, onNavigate }) {
   const [mode, setMode] = useState('register')
   const [selectedStack, setSelectedStack] = useState(['React', 'Node.js'])
   const [form, setForm] = useState(initialForm)
@@ -105,19 +105,23 @@ function AuthPage({ onLogin }) {
     <main className="min-h-screen bg-[#F7F5F0] text-[#1A1A18] antialiased">
       <nav className="fixed inset-x-0 top-0 z-20 border-b border-[#1A1A18]/10 bg-[#F7F5F0]/90 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6 sm:px-8">
-          <a
-            href="#top"
+          <button
+            type="button"
+            onClick={() => onNavigate?.('auth')}
             className="[font-family:Georgia,serif] text-xl italic tracking-normal text-[#1A1A18]"
           >
             Qurate
-          </a>
+          </button>
           <div className="flex items-center gap-8 text-sm font-medium">
-            <a href="#top" className="transition hover:text-[#2D6A4F]">
+            <button type="button" onClick={() => onNavigate?.('auth')} className="transition hover:text-[#2D6A4F]">
               Home
-            </a>
-            <a href="#auth" className="transition hover:text-[#2D6A4F]">
+            </button>
+            <button type="button" onClick={() => onNavigate?.('about')} className="transition hover:text-[#2D6A4F]">
+              About
+            </button>
+            <button type="button" onClick={() => switchMode('login')} className="transition hover:text-[#2D6A4F]">
               Sign in
-            </a>
+            </button>
           </div>
         </div>
       </nav>

@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import AuthPage from './pages/AuthPage.jsx'
+import AboutPage from './pages/AboutPage.jsx'
 import BookmarkPage from './pages/BookmarkPage.jsx'
 import DiscoverPage from './pages/DiscoverPage.jsx'
 import DiscoveryFeed from './pages/DiscoveryFeed.jsx'
 import Profile from './pages/Profile.jsx'
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx'
+import TermsPage from './pages/TermsPage.jsx'
 
 const BOOKMARKS_STORAGE_KEY = 'qurateBookmarks'
 const CONTRIBUTION_STATUS_OPTIONS = ['merged', 'submitted', 'planned']
@@ -192,7 +195,7 @@ function App() {
     openBookmarkStatusPicker(issue)
   }
 
-  let activeView = <AuthPage onLogin={handleLogin} />
+  let activeView = <AuthPage onLogin={handleLogin} onNavigate={handleViewChange} />
 
   if (view === 'bookmarks') {
     activeView = (
@@ -233,11 +236,20 @@ function App() {
         onUserUpdate={setUser}
       />
     )
+  } else if (view === 'about') {
+    activeView = <AboutPage onNavigate={handleViewChange} />
+  } else if (view === 'privacy') {
+    activeView = <PrivacyPolicyPage onNavigate={handleViewChange} />
+  } else if (view === 'terms') {
+    activeView = <TermsPage onNavigate={handleViewChange} />
   }
 
   return (
-    <>
-      {activeView}
+    <div className="min-h-screen bg-[#F7F5F0] text-[#1A1A18]">
+      <div className="flex min-h-screen flex-col">
+        <div className="flex-1">{activeView}</div>
+        <GlobalFooter onNavigate={handleViewChange} />
+      </div>
       {pendingBookmarkIssue && (
         <BookmarkStatusModal
           issue={pendingBookmarkIssue}
@@ -248,7 +260,7 @@ function App() {
           options={CONTRIBUTION_STATUS_OPTIONS}
         />
       )}
-    </>
+    </div>
   )
 }
 
@@ -302,6 +314,49 @@ function BookmarkStatusModal({ issue, status, onStatusChange, onCancel, onConfir
         </div>
       </div>
     </div>
+  )
+}
+
+function GlobalFooter({ onNavigate }) {
+  return (
+    <footer className="relative overflow-hidden border-t border-[#1A1A18]/10 bg-[#FAF8F3] text-[#1A1A18]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(45,106,79,0.08),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(198,163,100,0.08),transparent_28%)]"
+      />
+
+      <div className="relative mx-auto max-w-6xl px-6 py-14 sm:px-8 lg:py-16">
+        <div className="grid gap-10 lg:grid-cols-[1.05fr_1.25fr] lg:items-start">
+          <section className="max-w-xl space-y-5">
+            <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#1A1A18]/40">
+              Qurate
+            </p>
+            <h2 className="max-w-md [font-family:Georgia,serif] text-3xl font-bold leading-tight tracking-normal sm:text-4xl">
+              Embrace the future of open source with a smarter way to contribute.
+            </h2>
+          </section>
+
+          <section className="flex flex-col items-start justify-between gap-8 lg:items-end">
+            <div className="w-full max-w-3xl select-none text-left [font-family:Georgia,serif] text-[clamp(4.5rem,13vw,10rem)] font-bold leading-[0.82] tracking-[-0.08em] text-[#1A1A18]/8 sm:text-right">
+              <span className="block">Qurate</span>
+            </div>
+          </section>
+        </div>
+
+        <div className="mt-12 flex flex-col gap-3 border-t border-[#1A1A18]/10 pt-5 text-xs font-semibold uppercase tracking-[0.22em] text-[#1A1A18]/42 sm:flex-row sm:items-center sm:justify-between">
+          <p>© Qurate</p>
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <button type="button" onClick={() => onNavigate?.('privacy')} className="transition hover:text-[#2D6A4F]">
+              Privacy Policy
+            </button>
+            <span aria-hidden="true">·</span>
+            <button type="button" onClick={() => onNavigate?.('terms')} className="transition hover:text-[#2D6A4F]">
+              Terms &amp; Conditions
+            </button>
+          </div>
+        </div>
+      </div>
+    </footer>
   )
 }
 

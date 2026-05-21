@@ -47,6 +47,38 @@
   color: #dc2626;
 }
 
+.about-reveal {
+  animation: about-rise 720ms ease both;
+}
+
+.about-card {
+  animation: about-rise 720ms ease both;
+}
+
+.about-step {
+  animation: about-rise 760ms ease both;
+}
+
+.about-chip {
+  animation: about-fade 680ms ease both;
+}
+
+.about-illustration {
+  animation: about-hover 5s ease-in-out infinite;
+}
+
+.about-pulse {
+  animation: about-pulse 4s ease-in-out infinite;
+}
+
+.about-float {
+  animation: about-float 4.2s ease-in-out infinite;
+}
+
+.about-shelf {
+  animation: about-shelf 2.6s ease-in-out infinite;
+}
+
 @keyframes cue-float {
   0%,
   100% {
@@ -84,6 +116,78 @@
   }
 }
 
+@keyframes about-rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes about-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes about-hover {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes about-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.9;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes about-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes about-shelf {
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.8;
+  }
+
+  50% {
+    transform: scaleX(0.96);
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -91,7 +195,15 @@
 
   .scroll-cue,
   .feed-card,
-  .heart-button.liked {
+  .heart-button.liked,
+  .about-reveal,
+  .about-card,
+  .about-step,
+  .about-chip,
+  .about-illustration,
+  .about-pulse,
+  .about-float,
+  .about-shelf {
     animation: none;
   }
 }
