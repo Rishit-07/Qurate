@@ -1,6 +1,7 @@
 import express from "express";
 import protect from "../middleware/auth.js";
 import User from "../models/user.js";
+import bcrypt from "bcryptjs";
 
 const router = express.Router();
 
@@ -115,15 +116,31 @@ router.delete("/contributions/:issueId", protect, async (req, res) => {
     }
 });
 
-// Update profile for authenticated user
+// Update profile for authenticated user (allows changing email and password)
 router.put("/profile", protect, async (req, res) => {
     try {
-        const { username, githubUsername, stack, experienceLevel } = req.body;
+        const { username, githubUsername, stack, experienceLevel, email, password } = req.body;
         const updates = {};
         if (username !== undefined) updates.username = username;
         if (githubUsername !== undefined) updates.githubUsername = githubUsername;
         if (stack !== undefined) updates.stack = stack;
         if (experienceLevel !== undefined) updates.experienceLevel = experienceLevel;
+
+        // Handle email change (ensure uniqueness)
+        if (email !== undefined) {
+            const existing = await User.findOne({ email });
+            if (existing && String(existing._id) !== String(req.user.id)) {
+                return res.status(400).json({ error: 'Email already in use' });
+            }
+            updates.email = email;
+        }
+
+        // Handle password change (hash before saving)
+        if (password !== undefined && password) {
+            const salt = await bcrypt.genSalt(10);
+            const hashed = await bcrypt.hash(password, salt);
+            updates.password = hashed;
+        }
 
         const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select("username email stack experienceLevel githubUsername");
         if (!user) return res.status(404).json({ error: "User not found" });

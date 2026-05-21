@@ -209,8 +209,10 @@ function readLocalBookmarkContributions() {
 function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRefreshKey, onUserUpdate }) {
   const [username,        setUsername]        = useState(initialUser?.username        || '')
   const [githubUsername,  setGithubUsername]  = useState(initialUser?.githubUsername  || '')
+  const [email,           setEmail]           = useState(initialUser?.email           || '')
   const [stack,           setStack]           = useState(initialUser?.stack           || [])
   const [level,           setLevel]           = useState(initialUser?.experienceLevel || 'beginner')
+  const [newPassword,     setNewPassword]     = useState('')
 
   const [saving,          setSaving]          = useState(false)
   const [saveMsg,         setSaveMsg]         = useState({ type: '', text: '' })
@@ -312,7 +314,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
       const res  = await fetch(`${API_BASE_URL}/api/users/profile`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ username, githubUsername, stack, experienceLevel: level }),
+        body:    JSON.stringify({ username, githubUsername, stack, experienceLevel: level, email, password: newPassword || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Save failed')
@@ -426,6 +428,18 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                   )
                 })}
               </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-left">
+                <span className="text-sm font-medium text-[#1A1A18]/70">Email</span>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="you@example.com" />
+              </label>
+
+              <label className="block text-left">
+                <span className="text-sm font-medium text-[#1A1A18]/70">New password <span className="text-xs font-normal text-[#1A1A18]/45">(leave blank to keep current)</span></span>
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="Enter a new password" />
+              </label>
             </div>
 
             {saveMsg.text && (

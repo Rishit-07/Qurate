@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const RAW_API_BASE =
   import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
@@ -17,6 +17,9 @@ function AuthPage({ onLogin, onNavigate }) {
   const [form, setForm] = useState(initialForm)
   const [status, setStatus] = useState({ type: '', message: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
+  const typingTimer = useRef(null)
 
   const isRegistering = mode === 'register'
 
@@ -28,6 +31,23 @@ function AuthPage({ onLogin, onNavigate }) {
       [name]: value,
     }))
   }
+
+  function handlePasswordInput(event) {
+    updateForm(event)
+    setIsTyping(true)
+    if (typingTimer.current) clearTimeout(typingTimer.current)
+    typingTimer.current = setTimeout(() => setIsTyping(false), 800)
+  }
+
+  function toggleShowPassword() {
+    setShowPassword((s) => !s)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current)
+    }
+  }, [])
 
   function toggleStack(tech) {
     setSelectedStack((current) =>
@@ -229,16 +249,42 @@ function AuthPage({ onLogin, onNavigate }) {
               <span className="text-sm font-medium text-[#1A1A18]/70">
                 Password
               </span>
-              <input
-                type="password"
-                name="password"
-                value={form.password}
-                onChange={updateForm}
-                required
-                minLength={6}
-                className="mt-2 h-12 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20"
-                placeholder="Enter your password"
-              />
+              <div className="relative mt-2">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  value={form.password}
+                  onChange={handlePasswordInput}
+                  required
+                  minLength={6}
+                  className="h-12 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 pr-12 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20"
+                  placeholder="Enter your password"
+                />
+
+                <button
+                  type="button"
+                  onClick={toggleShowPassword}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md border border-transparent bg-white/40 text-sm text-[#1A1A18] transition ${isTyping ? 'animate-pulse scale-105' : 'hover:bg-white/60'}`}
+                >
+                  {showPassword ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-5 0-9.27-3-11-8 1.09-2.79 2.95-5.06 5.2-6.56" />
+                      <path d="M1 1l22 22" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              {!isRegistering && (
+                <div className="mt-2 text-right">
+                  <button type="button" onClick={() => onNavigate('profile')} className="text-xs font-semibold text-[#2D6A4F] underline underline-offset-2 transition hover:text-[#24583F]">Forgot password?</button>
+                </div>
+              )}
             </label>
 
             {isRegistering && (

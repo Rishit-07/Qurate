@@ -32,7 +32,7 @@ function App() {
   // If the user has no local bookmarks but server contributions exist,
   // populate local bookmarks from the server so the Bookmarks page shows them.
   useEffect(() => {
-    const token = localStorage.getItem('qurateToken')
+    const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
     if (!token) return
     if (bookmarks.length > 0) return
 
@@ -61,7 +61,7 @@ function App() {
           if (current.length > 0) return current
           return mapped
         })
-      } catch (e) {
+      } catch {
         // ignore errors — keep bookmarks local
       }
     }
