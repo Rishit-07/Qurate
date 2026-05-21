@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
@@ -13,11 +13,14 @@ function DiscoveryFeed({
   const [issues, setIssues] = useState([])
   const [activeFilter, setActiveFilter] = useState('All')
   const [currentPage, setCurrentPage] = useState(1)
+  const [maxFetchedPage, setMaxFetchedPage] = useState(1)
   const [feedStatus, setFeedStatus] = useState({
     loading: true,
     error: '',
     total: 0,
   })
+  const sentinelRef = useRef(null)
+  const isFetchingRef = useRef(false)
 
   const preferredStack = useMemo(() => {
     if (user?.stack?.length) return user.stack
@@ -74,41 +77,55 @@ function DiscoveryFeed({
 
   useEffect(() => {
     const controller = new AbortController()
+    const PREFETCH_PAGES = 2 // number of extra pages to prefetch in background
+
+    async function fetchPage(page) {
+      if (!page || page < 1) return []
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/issues?page=${page}`, {
+          signal: controller.signal,
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Could not load issues')
+        return data
+      } catch {
+        return { issues: [] }
+      }
+    }
 
     async function fetchIssues() {
       setFeedStatus((current) => ({ ...current, loading: true, error: '' }))
 
       try {
-        const allIssues = []
-        let page = 1
-        let hasMore = true
-        let total = 0
+        // Fetch first page and render immediately
+        const firstData = await fetchPage(1)
 
-        while (hasMore) {
-          const response = await fetch(
-            `${API_BASE_URL}/api/issues?page=${page}`,
-            {
-              signal: controller.signal,
-            },
-          )
-          const data = await response.json()
+        const allIssues = [...(firstData.issues || [])]
+        const total = firstData.total || allIssues.length
+        setIssues(allIssues)
+        setFeedStatus({ loading: false, error: '', total })
+        setMaxFetchedPage(1)
 
-          if (!response.ok) {
-            throw new Error(data.error || 'Could not load issues')
+        // Prefetch a limited number of additional pages in background
+        const pageSize = ISSUES_PER_PAGE
+        const totalPages = Math.max(1, Math.ceil(total / pageSize))
+        const lastPrefetchPage = Math.min(totalPages, 1 + PREFETCH_PAGES)
+
+        if (lastPrefetchPage > 1) {
+          const promises = []
+          for (let p = 2; p <= lastPrefetchPage; p++) {
+            promises.push(
+              fetchPage(p).then((d) => {
+                if (d?.issues?.length) {
+                  setIssues((prev) => [...prev, ...d.issues])
+                  setMaxFetchedPage((prevPage) => Math.max(prevPage, p))
+                }
+              }),
+            )
           }
 
-          allIssues.push(...(data.issues || []))
-          total = data.total || allIssues.length
-          hasMore = Boolean(data.hasMore)
-          page += 1
+          Promise.all(promises).catch(() => {})
         }
-
-        setIssues(allIssues)
-        setFeedStatus({
-          loading: false,
-          error: '',
-          total,
-        })
       } catch (error) {
         if (error.name !== 'AbortError') {
           setFeedStatus({
@@ -126,6 +143,54 @@ function DiscoveryFeed({
 
     return () => controller.abort()
   }, [])
+
+  // IntersectionObserver to implement scroll pagination (loads next page when sentinel visible)
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return
+
+          // load next page when sentinel is visible
+          const nextPage = maxFetchedPage + 1
+          const totalPagesFromStatus = Math.max(1, Math.ceil((feedStatus.total || 0) / ISSUES_PER_PAGE))
+
+          if (isFetchingRef.current) return
+          if (nextPage > totalPagesFromStatus) return
+
+          isFetchingRef.current = true
+
+          // fetch next page and append
+          fetch(`${API_BASE_URL}/api/issues?page=${nextPage}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d?.issues?.length) {
+                setIssues((prev) => [...prev, ...d.issues])
+                setMaxFetchedPage((prev) => Math.max(prev, nextPage))
+                setCurrentPage((cur) => cur + 1)
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              isFetchingRef.current = false
+            })
+        })
+      },
+      {
+        root: null,
+        rootMargin: '300px',
+        threshold: 0.1,
+      },
+    )
+
+    const el = sentinelRef.current
+    if (el) observer.observe(el)
+
+    return () => {
+      if (el) observer.unobserve(el)
+      observer.disconnect()
+    }
+  }, [maxFetchedPage, feedStatus.total])
 
   return (
     <main className="min-h-screen bg-[#F7F5F0] text-[#1A1A18] antialiased">
@@ -233,6 +298,9 @@ function DiscoveryFeed({
                 onPageChange={setCurrentPage}
               />
             )}
+
+          {/* Sentinel for scroll-based pagination */}
+          <div ref={sentinelRef} className="h-6 w-full" aria-hidden="true" />
 
           {!feedStatus.loading &&
             !feedStatus.error &&
