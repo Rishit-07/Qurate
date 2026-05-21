@@ -7,7 +7,6 @@ function DiscoveryFeed({
   user,
   bookmarks,
   onNavigate,
-  onSignOut,
   onToggleBookmark,
 }) {
   const [issues, setIssues] = useState([])
@@ -383,24 +382,30 @@ function PaginationControls({ currentPage, totalPages, onPageChange }) {
           start = Math.max(1, totalPages - maxButtons + 1)
         }
 
-        const buttons = []
-        for (let p = start; p <= end; p += 1) {
-          const selected = p === currentPage
-          buttons.push(
-            <button
-              key={p}
-              type="button"
-              onClick={() => goToPage(p)}
-              className={`h-10 min-w-10 rounded-md border px-3 text-sm font-bold transition ${
-                selected
-                  ? 'border-[#2D6A4F] bg-[#2D6A4F] text-[#F7F5F0]'
-                  : 'border-[#1A1A18]/15 bg-white/45 text-[#1A1A18]/75 hover:border-[#2D6A4F] hover:text-[#2D6A4F]'
-              }`}
-            >
-              {p}
-            </button>,
-          )
-        }
+       const buttons = []
+
+for (
+  let pageNum = start;
+  pageNum <= end;
+  pageNum++
+) {
+  const selected = pageNum === currentPage
+
+  buttons.push(
+    <button
+      key={pageNum}
+      type="button"
+      onClick={() => goToPage(pageNum)}
+      className={`h-10 min-w-10 rounded-md border px-3 text-sm font-bold transition ${
+        selected
+          ? 'border-[#2D6A4F] bg-[#2D6A4F] text-[#F7F5F0]'
+          : 'border-[#1A1A18]/15 bg-white/45 text-[#1A1A18]/75 hover:border-[#2D6A4F] hover:text-[#2D6A4F]'
+      }`}
+    >
+      {pageNum}
+    </button>
+  )
+}
 
         return buttons
       })()}
