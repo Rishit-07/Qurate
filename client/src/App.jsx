@@ -29,6 +29,49 @@ function App() {
   const [bookmarkStatus, setBookmarkStatus] = useState('planned')
   const [contributionRefreshKey, setContributionRefreshKey] = useState(0)
 
+  // If the user has no local bookmarks but server contributions exist,
+  // populate local bookmarks from the server so the Bookmarks page shows them.
+  useEffect(() => {
+    const token = localStorage.getItem('qurateToken')
+    if (!token) return
+    if (bookmarks.length > 0) return
+
+    let cancelled = false
+
+    async function fetchServerContributions() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/users/contributions`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const serverContributions = data.contributions || []
+        if (cancelled || !serverContributions.length) return
+
+        const mapped = serverContributions.map((c) => ({
+          _id: String(c.issueId || `${c.repoName}::${c.issueTitle}`),
+          title: c.issueTitle || '',
+          repo: { name: c.repoName || '' },
+          html_url: c.pullRequestUrl || '',
+          bookmarkStatus: c.status || 'planned',
+        }))
+
+        setBookmarks((current) => {
+          // Only set if still empty
+          if (current.length > 0) return current
+          return mapped
+        })
+      } catch (e) {
+        // ignore errors — keep bookmarks local
+      }
+    }
+
+    fetchServerContributions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [contributionRefreshKey])
   function handleLogin(userData, token) {
     localStorage.setItem('qurateToken', token)
     localStorage.setItem('qurateUser', JSON.stringify(userData))
