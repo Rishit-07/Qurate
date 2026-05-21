@@ -60,7 +60,7 @@ function DiscoveryFeed({
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredIssues.length / ISSUES_PER_PAGE),
+    Math.ceil((feedStatus.total || 0) / ISSUES_PER_PAGE),
   )
   const safeCurrentPage = Math.min(currentPage, totalPages)
 
@@ -167,7 +167,6 @@ function DiscoveryFeed({
               if (d?.issues?.length) {
                 setIssues((prev) => [...prev, ...d.issues])
                 setMaxFetchedPage((prev) => Math.max(prev, nextPage))
-                setCurrentPage((cur) => cur + 1)
               }
             })
             .catch(() => {})
@@ -191,6 +190,35 @@ function DiscoveryFeed({
       observer.disconnect()
     }
   }, [maxFetchedPage, feedStatus.total])
+
+  // Page change handler: if requested page isn't fetched yet, fetch it first
+  async function handlePageChange(page) {
+    if (page < 1) return
+
+    // If we've already fetched this page, just change the page
+    if (page <= maxFetchedPage) {
+      setCurrentPage(page)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    // Otherwise fetch the required page and then navigate to it
+    try {
+      isFetchingRef.current = true
+      const res = await fetch(`${API_BASE_URL}/api/issues?page=${page}`)
+      const data = await res.json()
+      if (data?.issues?.length) {
+        setIssues((prev) => [...prev, ...data.issues])
+        setMaxFetchedPage((prev) => Math.max(prev, page))
+        setCurrentPage(page)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    } catch {
+      // ignore fetch errors for pagination
+    } finally {
+      isFetchingRef.current = false
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#F7F5F0] text-[#1A1A18] antialiased">
@@ -291,11 +319,11 @@ function DiscoveryFeed({
 
           {!feedStatus.loading &&
             !feedStatus.error &&
-            filteredIssues.length > ISSUES_PER_PAGE && (
+            (feedStatus.total || 0) > ISSUES_PER_PAGE && (
               <PaginationControls
                 currentPage={safeCurrentPage}
                 totalPages={totalPages}
-                onPageChange={setCurrentPage}
+                onPageChange={handlePageChange}
               />
             )}
 
