@@ -212,6 +212,7 @@ function AuthPage({ onLogin, onNavigate }) {
             </p>
           </div>
 
+          {mode !== 'forgot' && (
           <form onSubmit={handleAuthSubmit} className="space-y-5">
             {isRegistering && (
               <label className="block text-left">
@@ -282,10 +283,12 @@ function AuthPage({ onLogin, onNavigate }) {
               </div>
               {!isRegistering && (
                 <div className="mt-2 text-right">
-                  <button type="button" onClick={() => onNavigate('profile')} className="text-xs font-semibold text-[#2D6A4F] underline underline-offset-2 transition hover:text-[#24583F]">Forgot password?</button>
+                  <button type="button" onClick={() => switchMode('forgot')} className="text-xs font-semibold text-[#2D6A4F] underline underline-offset-2 transition hover:text-[#24583F]">Forgot password?</button>
                 </div>
               )}
             </label>
+
+
 
             {isRegistering && (
               <>
@@ -357,6 +360,43 @@ function AuthPage({ onLogin, onNavigate }) {
                   : 'Sign in'}
             </button>
           </form>
+          )}
+
+          {mode === 'forgot' && (
+            <div className="rounded-md border px-4 py-4 text-sm text-left">
+              <p className="mb-3 text-sm">Enter the email for your account and we'll send password reset instructions.</p>
+              <div>
+                <label className="block text-left">
+                  <span className="text-sm font-medium text-[#1A1A18]/70">Email</span>
+                  <input type="email" name="email" value={form.email} onChange={updateForm} required className="mt-2 h-12 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="you@example.com" />
+                </label>
+                <div className="mt-4 flex gap-3">
+                  <button type="button" onClick={async () => {
+                    setStatus({ type: '', message: '' })
+                    setIsSubmitting(true)
+                    try {
+                      const res = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: form.email.trim() })
+                      })
+                      let data = {}
+                        try { data = await res.json() } catch { void 0 }
+                      setStatus({ type: 'success', message: data.message || "If an account exists we'll send reset instructions to your email." })
+                      setMode('login')
+                      } catch {
+                        setStatus({ type: 'success', message: "If an account exists we'll send reset instructions to your email." })
+                        setMode('login')
+                      } finally {
+                      setIsSubmitting(false)
+                    }
+                    }} disabled={isSubmitting} className="h-12 flex-1 rounded-md bg-[#2D6A4F] px-5 text-sm font-bold text-[#F7F5F0] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#24583F]">{isSubmitting ? 'Sending…' : 'Send reset email'}</button>
+                  <button type="button" onClick={() => switchMode('login')} className="h-12 rounded-md border border-[#1A1A18]/15 px-5 text-sm font-semibold">Back</button>
+                  <button type="button" onClick={() => onNavigate?.('auth')} className="h-12 rounded-md border border-[#1A1A18]/15 px-5 text-sm font-semibold">Back to home</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <p className="mt-5 text-center text-sm font-medium text-[#1A1A18]/60">
             {isRegistering ? 'Already have an account?' : 'New to Qurate?'}{' '}
