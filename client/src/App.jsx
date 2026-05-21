@@ -28,6 +28,7 @@ function App() {
   const [pendingBookmarkIssue, setPendingBookmarkIssue] = useState(null)
   const [bookmarkStatus, setBookmarkStatus] = useState('planned')
   const [contributionRefreshKey, setContributionRefreshKey] = useState(0)
+  const [toast, setToast] = useState(null)
 
   // If the user has no local bookmarks but server contributions exist,
   // populate local bookmarks from the server so the Bookmarks page shows them.
@@ -88,6 +89,16 @@ function App() {
   }
 
   function handleViewChange(nextView) {
+    // Protect certain views from unauthenticated access
+    const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
+    const protectedViews = ['feed', 'discover', 'bookmarks', 'profile']
+    if (protectedViews.includes(nextView) && !token) {
+      setView('auth')
+      setToast({ type: 'info', text: 'Sign in to access that page.' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
     setView(nextView)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -303,6 +314,16 @@ function App() {
           onConfirm={confirmBookmarkStatus}
           options={CONTRIBUTION_STATUS_OPTIONS}
         />
+      )}
+
+      {toast && (
+        <div aria-live="polite" className="pointer-events-none fixed inset-0 flex items-end px-4 py-6 sm:items-start sm:p-6">
+          <div className="w-full flex flex-col items-center space-y-4 sm:items-end">
+            <div className={`pointer-events-auto max-w-sm w-full rounded-lg shadow-lg ring-1 ring-black/5 ${toast.type === 'info' ? 'bg-white/95 border border-[#2D6A4F]/10' : 'bg-white/95'}`}>
+              <div className="p-4 text-sm font-medium text-[#1A1A18]">{toast.text}</div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
