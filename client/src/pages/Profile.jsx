@@ -216,6 +216,10 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
 
   const [saving,          setSaving]          = useState(false)
   const [saveMsg,         setSaveMsg]         = useState({ type: '', text: '' })
+  const [emailSaving,     setEmailSaving]     = useState(false)
+  const [emailMsg,        setEmailMsg]        = useState({ type: '', text: '' })
+  const [pwdSaving,       setPwdSaving]       = useState(false)
+  const [pwdMsg,          setPwdMsg]          = useState({ type: '', text: '' })
 
   const [heatmap,         setHeatmap]         = useState(null)
   const [heatLoading,     setHeatLoading]     = useState(false)
@@ -314,7 +318,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
       const res  = await fetch(`${API_BASE_URL}/api/users/profile`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ username, githubUsername, stack, experienceLevel: level, email, password: newPassword || undefined }),
+        body:    JSON.stringify({ username, githubUsername, stack, experienceLevel: level }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Save failed')
@@ -431,15 +435,74 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-left">
-                <span className="text-sm font-medium text-[#1A1A18]/70">Email</span>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="you@example.com" />
-              </label>
+              <div>
+                <p className="text-sm font-medium text-[#1A1A18]/70">Credentials</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-left">
+                      <span className="text-sm font-medium text-[#1A1A18]/70">Email</span>
+                      <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="you@example.com" />
+                    </label>
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" onClick={async () => {
+                        const token = getToken();
+                        setEmailSaving(true); setEmailMsg({ type: '', text: '' });
+                        try {
+                          const res = await fetch(`${API_BASE_URL}/api/users/profile`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify({ email }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || 'Email update failed');
+                          const storedUser = JSON.parse(localStorage.getItem('qurateUser') || '{}');
+                          const updatedUser = { ...storedUser, ...data.user };
+                          localStorage.setItem('qurateUser', JSON.stringify(updatedUser));
+                          onUserUpdate?.(updatedUser);
+                          setEmailMsg({ type: 'success', text: 'Email updated.' });
+                        } catch (err) {
+                          setEmailMsg({ type: 'error', text: err.message || 'Could not update email.' });
+                        } finally {
+                          setEmailSaving(false);
+                          setTimeout(() => setEmailMsg({ type: '', text: '' }), 4000);
+                        }
+                      }} className="h-9 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0]">Update email</button>
+                      {emailMsg.text && <p className={`text-sm font-medium ${emailMsg.type === 'success' ? 'text-[#2D6A4F]' : 'text-red-700'}`}>{emailMsg.text}</p>}
+                    </div>
+                  </div>
 
-              <label className="block text-left">
-                <span className="text-sm font-medium text-[#1A1A18]/70">New password <span className="text-xs font-normal text-[#1A1A18]/45">(leave blank to keep current)</span></span>
-                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="Enter a new password" />
-              </label>
+                  <div>
+                    <label className="block text-left">
+                      <span className="text-sm font-medium text-[#1A1A18]/70">New password <span className="text-xs font-normal text-[#1A1A18]/45">(enter to change)</span></span>
+                      <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="Enter a new password" />
+                    </label>
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" onClick={async () => {
+                        if (!newPassword || newPassword.length < 6) { setPwdMsg({ type: 'error', text: 'Password must be at least 6 characters.' }); setTimeout(() => setPwdMsg({ type: '', text: '' }), 3000); return }
+                        const token = getToken();
+                        setPwdSaving(true); setPwdMsg({ type: '', text: '' });
+                        try {
+                          const res = await fetch(`${API_BASE_URL}/api/users/profile`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify({ password: newPassword }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || 'Password update failed');
+                          setPwdMsg({ type: 'success', text: 'Password updated.' });
+                          setNewPassword('');
+                        } catch (err) {
+                          setPwdMsg({ type: 'error', text: err.message || 'Could not update password.' });
+                        } finally {
+                          setPwdSaving(false);
+                          setTimeout(() => setPwdMsg({ type: '', text: '' }), 4000);
+                        }
+                      }} className="h-9 rounded-md bg-[#2D6A4F] px-4 text-sm font-semibold text-[#F7F5F0]">Change password</button>
+                      {pwdMsg.text && <p className={`text-sm font-medium ${pwdMsg.type === 'success' ? 'text-[#2D6A4F]' : 'text-red-700'}`}>{pwdMsg.text}</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {saveMsg.text && (
