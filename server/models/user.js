@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema({
         enum:["beginner","intermediate","advanced"],
         default:"beginner"
     },
+    githubUsername: {
+        type: String,
+        trim: true,
+    },
      bookmarks: [
             {
                 type: mongoose.Schema.Types.ObjectId,
@@ -36,6 +40,7 @@ const userSchema = new mongoose.Schema({
         ],
         contributions:[
             {
+                    issueId: String,
                 repoName: String,
                 issueTitle: String,
                 pullRequestUrl: String,

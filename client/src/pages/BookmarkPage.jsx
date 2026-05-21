@@ -1,8 +1,8 @@
 function BookmarkPage({
   bookmarks,
   onNavigate,
-  onSignOut,
   onToggleBookmark,
+  onUpdateBookmarkStatus,
 }) {
   return (
     <main className="min-h-screen bg-[#F7F5F0] text-[#1A1A18] antialiased">
@@ -27,7 +27,7 @@ function BookmarkPage({
             </button>
             <button className="font-bold text-[#1A1A18]">Bookmarks</button>
             <button
-              onClick={onSignOut}
+              onClick={() => onNavigate('profile')}
               className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]"
             >
               Profile
@@ -55,6 +55,7 @@ function BookmarkPage({
               issue={issue}
               index={index}
               onToggleBookmark={onToggleBookmark}
+              onUpdateBookmarkStatus={onUpdateBookmarkStatus}
             />
           ))}
 
@@ -74,10 +75,11 @@ function BookmarkPage({
   )
 }
 
-function BookmarkCard({ issue, index, onToggleBookmark }) {
+function BookmarkCard({ issue, index, onToggleBookmark, onUpdateBookmarkStatus }) {
   const score = getIssueScore(issue)
   const labels = issue.labels?.slice(0, 3) || []
   const language = issue.repo?.language || issue.stacks?.[0] || 'open source'
+  const status = issue.bookmarkStatus || 'planned'
 
   return (
     <article
@@ -133,6 +135,21 @@ function BookmarkCard({ issue, index, onToggleBookmark }) {
           />
         </div>
         <span className="text-[#2D6A4F]">{score}/10</span>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1A1A18]/45">
+          Status
+        </span>
+        <select
+          value={status}
+          onChange={(event) => onUpdateBookmarkStatus?.(issue, event.target.value)}
+          className="h-9 rounded-md border border-[#1A1A18]/15 bg-white/70 px-3 text-sm font-semibold text-[#1A1A18]/75 outline-none transition focus:border-[#2D6A4F]"
+        >
+          <option value="planned">Planned</option>
+          <option value="submitted">Submitted</option>
+          <option value="merged">Merged</option>
+        </select>
       </div>
     </article>
   )

@@ -48,7 +48,8 @@ export const register = async (req, res) => {
                 username: newUser.username,
                 email: newUser.email,
                 stack: newUser.stack,
-                experienceLevel: newUser.experienceLevel
+                experienceLevel: newUser.experienceLevel,
+                githubUsername: newUser.githubUsername
             }
         });
 
@@ -96,7 +97,8 @@ export const login = async (req, res) => {
                 username: existingUser.username,
                 email: existingUser.email,
                 stack: existingUser.stack,
-                experienceLevel: existingUser.experienceLevel
+                experienceLevel: existingUser.experienceLevel,
+                githubUsername: existingUser.githubUsername
             }
         });
 
@@ -106,3 +108,4 @@ export const login = async (req, res) => {
         });
     }
 };
+
