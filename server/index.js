@@ -68,5 +68,8 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    // Log whether a JWT secret is present (do not print the secret)
+    const jwtConfigured = !!(process.env.JWT_SECRET || process.env.SECRET_KEY);
+    console.log(`JWT secret configured: ${jwtConfigured}`);
     startIssueSyncScheduler();
 });
