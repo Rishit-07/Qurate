@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
+const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
 
 const STACK_OPTIONS = [
   'React', 'Node.js', 'Python', 'Vue', 'MongoDB',

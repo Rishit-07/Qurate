@@ -11,7 +11,8 @@ import TermsPage from './pages/TermsPage.jsx'
 
 const BOOKMARKS_STORAGE_KEY = 'qurateBookmarks'
 const CONTRIBUTION_STATUS_OPTIONS = ['merged', 'submitted', 'planned']
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
+const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
 
 function App() {
   const [view, setView] = useState(() =>
