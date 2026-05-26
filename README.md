@@ -68,7 +68,6 @@ The result is a personalised feed of issues that are genuinely relevant with a p
 | Scheduling | node-cron |
 | AI Scoring | Google Gemini API |
 | GitHub Data | GitHub REST API, GitHub GraphQL API |
-| Email | Nodemailer |
 | Deployment | Vercel (frontend), Render (backend), MongoDB Atlas |
 
 ---
@@ -228,7 +227,7 @@ The scoring system is lazy by design. Calling the AI API on every page load woul
 
 ### How a score is generated
 
-1. User clicks "Get AI score" on an issue
+1. The issue is automatically checked.
 2. Server checks if a score already exists for that user on that issue
 3. If yes — returns the cached result instantly, no API call made
 4. If no — builds a structured prompt with the issue title, labels, complexity, the user's stack, and their experience level
@@ -250,20 +249,16 @@ One API call per user per issue. Maximum.
 
 ## Roadmap
 
-- [ ] Weekly email digest of top personalised issues
-- [ ] Contribution streak tracking with milestone badges
 - [ ] GitHub OAuth sign-in
-- [ ] Team workspaces for pair programming on issues
+- [ ] Curate issues according to the 
 - [ ] Public profile pages to share contribution history
 - [ ] Mobile app (React Native)
-- [ ] Dark mode
-- [ ] Export contribution log as PDF for job applications
 
 ---
 
 ## Author
 
-Built by **Sai Rishit Sunku** a solo capstone project built with React, Node.js, MongoDB, Express, and the Gemini API.
+Built by **Sai Rishit Sunku**, a solo capstone project built with React, Node.js, MongoDB, Express, and the Gemini API.
 
 Built because finding a good open source issue to work on should not require two hours of searching and three tabs of disappointment.
 
