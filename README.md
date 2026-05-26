@@ -156,6 +156,7 @@ npm run dev
 
 The React app will be available at `http://localhost:5173`.
 
+
 ### 4. Seed initial data
 
 Trigger the first GitHub issue sync by hitting this endpoint once:
