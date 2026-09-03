@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import AiAssistantModal from '../components/AiAssistantModal'
 
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
@@ -14,6 +15,9 @@ function DiscoveryFeed({
   const [activeFilter, setActiveFilter] = useState('All')
   const [currentPage, setCurrentPage] = useState(1)
   const [maxFetchedPage, setMaxFetchedPage] = useState(1)
+  const [selectedAiIssue, setSelectedAiIssue] = useState(null)
+  const [ragQuery, setRagQuery] = useState('')
+  const [ragLoading, setRagLoading] = useState(false)
   const [feedStatus, setFeedStatus] = useState({
     loading: true,
     error: '',
@@ -266,8 +270,8 @@ function DiscoveryFeed({
           </p>
         </header>
 
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="flex flex-1 flex-wrap gap-3">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-1 flex-wrap gap-2">
             {availableFilterOptions.map((filter) => {
               const selected = activeFilter === filter
 
@@ -275,7 +279,7 @@ function DiscoveryFeed({
                 <button
                   key={filter}
                   onClick={() => selectPresetFilter(filter)}
-                  className={`h-9 rounded-full border px-5 text-sm font-semibold transition ${
+                  className={`h-8 rounded-full border px-4 text-xs font-semibold transition ${
                     selected
                       ? 'border-[#1A1A18] bg-[#1A1A18] text-[#F7F5F0]'
                       : 'border-[#1A1A18]/15 bg-white/45 text-[#1A1A18]/75 hover:border-[#2D6A4F] hover:text-[#2D6A4F]'
@@ -286,6 +290,50 @@ function DiscoveryFeed({
               )
             })}
           </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!ragQuery.trim()) return
+              try {
+                setRagLoading(true)
+                const res = await fetch(`${API_BASE_URL}/api/ai/rag-search`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+                  },
+                  body: JSON.stringify({ query: ragQuery }),
+                })
+                const data = await res.json()
+                if (data.issues) {
+                  setIssues(data.issues)
+                  setFeedStatus((prev) => ({ ...prev, total: data.issues.length }))
+                  setActiveFilter('All')
+                }
+              } catch (err) {
+                console.error(err)
+              } finally {
+                setRagLoading(false)
+              }
+            }}
+            className="flex items-center gap-2"
+          >
+            <input
+              type="text"
+              value={ragQuery}
+              onChange={(e) => setRagQuery(e.target.value)}
+              placeholder="🧠 RAG Semantic Vector Search..."
+              className="h-8 w-64 rounded-full border border-[#2D6A4F]/30 bg-white px-3 text-xs text-[#1A1A18] outline-none focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F]"
+            />
+            <button
+              type="submit"
+              disabled={ragLoading}
+              className="h-8 rounded-full bg-[#2D6A4F] px-3 text-xs font-bold text-white transition hover:bg-[#24583F]"
+            >
+              {ragLoading ? '...' : 'Search'}
+            </button>
+          </form>
         </div>
 
         {feedStatus.error && (
@@ -314,6 +362,7 @@ function DiscoveryFeed({
                   (bookmark) => getIssueId(bookmark) === getIssueId(issue),
                 )}
                 onToggleBookmark={onToggleBookmark}
+                onOpenAi={setSelectedAiIssue}
               />
             ))}
 
@@ -344,11 +393,19 @@ function DiscoveryFeed({
             )}
         </div>
       </section>
+
+      {selectedAiIssue && (
+        <AiAssistantModal
+          issue={selectedAiIssue}
+          user={user}
+          onClose={() => setSelectedAiIssue(null)}
+        />
+      )}
     </main>
   )
 }
 
-function IssueCard({ issue, index, isBookmarked, onToggleBookmark }) {
+function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi }) {
   const score = getIssueScore(issue)
   const muted = score <= 3
   const labels = issue.labels?.slice(0, 3) || []
@@ -401,6 +458,11 @@ function IssueCard({ issue, index, isBookmarked, onToggleBookmark }) {
         <span className="rounded-full bg-[#1A1A18]/5 px-3 py-1 text-xs font-semibold text-[#1A1A18]/60">
           {issue.complexity || 'beginner'}
         </span>
+        {issue.vectorSimilarity !== undefined && (
+          <span className="rounded-full bg-indigo-100 text-indigo-800 px-2.5 py-0.5 text-xs font-bold">
+            RAG Match: {(issue.vectorSimilarity * 100).toFixed(0)}%
+          </span>
+        )}
       </div>
 
       <div className="mt-6 grid grid-cols-[auto_1fr_auto] items-center gap-3 text-sm font-semibold text-[#1A1A18]/70">
@@ -417,6 +479,19 @@ function IssueCard({ issue, index, isBookmarked, onToggleBookmark }) {
       <p className="mt-4 text-sm font-medium leading-6 text-[#1A1A18]/65">
         {getIssueReason(issue, score)}
       </p>
+
+      <div className="mt-4 flex items-center justify-between border-t border-[#1A1A18]/10 pt-3">
+        <button
+          type="button"
+          onClick={() => onOpenAi?.(issue)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[#2D6A4F]/30 bg-[#2D6A4F]/10 px-3 py-1.5 text-xs font-bold text-[#2D6A4F] transition hover:bg-[#2D6A4F] hover:text-[#F7F5F0]"
+        >
+          ⚡ AI Deep Dive & Roadmap (Streaming / Multi-Step Agent)
+        </button>
+        <span className="text-[11px] font-medium text-[#1A1A18]/50">
+          Gemini 2.5 Flash
+        </span>
+      </div>
     </article>
   )
 }

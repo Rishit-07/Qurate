@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import SqlAnalyticsSection from '../components/SqlAnalyticsSection'
 
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
@@ -211,11 +212,13 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
   const [githubUsername,  setGithubUsername]  = useState(initialUser?.githubUsername  || '')       
   const [stack,           setStack]           = useState(initialUser?.stack           || [])
   const [level,           setLevel]           = useState(initialUser?.experienceLevel || 'beginner')
-  
+  const [avatar,          setAvatar]          = useState(initialUser?.avatar          || '')
+  const [role,            setRole]            = useState(initialUser?.role            || 'user')
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const fileInputRef = useRef(null)
 
   const [saving,          setSaving]          = useState(false)
   const [saveMsg,         setSaveMsg]         = useState({ type: '', text: '' })
-  
 
   const [heatmap,         setHeatmap]         = useState(null)
   const [heatLoading,     setHeatLoading]     = useState(false)
@@ -226,6 +229,37 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
 
   function getToken() {
     return localStorage.getItem('token') || localStorage.getItem('qurateToken')
+  }
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append('avatar', file)
+
+    try {
+      setUploadingAvatar(true)
+      const res = await fetch(`${API_BASE_URL}/api/auth/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Avatar upload failed')
+
+      setAvatar(data.avatarUrl)
+      const storedUser = JSON.parse(localStorage.getItem('qurateUser') || '{}')
+      const updated = { ...storedUser, avatar: data.avatarUrl }
+      localStorage.setItem('qurateUser', JSON.stringify(updated))
+      localStorage.setItem('user', JSON.stringify(updated))
+      onUserUpdate?.(updated)
+      setSaveMsg({ type: 'success', text: 'Profile avatar uploaded successfully!' })
+    } catch (err) {
+      setSaveMsg({ type: 'error', text: err.message || 'Avatar upload failed' })
+    } finally {
+      setUploadingAvatar(false)
+    }
   }
 
   
@@ -371,12 +405,44 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
       <section className="mx-auto w-full max-w-3xl border-x border-[#1A1A18]/10 px-6 py-10 sm:px-8">
 
         <div className="mb-8 flex flex-col items-start gap-6 sm:flex-row sm:items-center">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-[#2D6A4F]/20 bg-[#2D6A4F]/10 text-3xl font-bold text-[#2D6A4F] [font-family:Georgia,serif]">
-            {initials}
+          <div className="relative group flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#2D6A4F]/20 bg-[#2D6A4F]/10 text-3xl font-bold text-[#2D6A4F] [font-family:Georgia,serif]">
+            {avatar ? (
+              <img
+                src={avatar.startsWith('http') ? avatar : `${API_BASE_URL}${avatar}`}
+                alt={username}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              initials
+            )}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] font-bold text-white opacity-0 transition group-hover:opacity-100"
+            >
+              {uploadingAvatar ? '...' : 'Upload'}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
           </div>
 
           <div className="flex-1">
-            <h1 className="[font-family:Georgia,serif] text-3xl font-bold tracking-tight text-[#1A1A18]">{username || 'Your profile'}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="[font-family:Georgia,serif] text-3xl font-bold tracking-tight text-[#1A1A18]">{username || 'Your profile'}</h1>
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
+                role === 'admin'
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : 'bg-[#2D6A4F]/10 text-[#2D6A4F] border border-[#2D6A4F]/20'
+              }`}>
+                {role === 'admin' ? '🛡️ Admin' : '💻 Contributor'}
+              </span>
+            </div>
             <p className="mt-1 text-sm font-medium text-[#1A1A18]/55">{initialUser?.email}</p>
             {githubUsername && (
               <a href={`https://github.com/${githubUsername}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#2D6A4F] underline underline-offset-4 transition hover:text-[#24583F]">@{githubUsername} ↗</a>
@@ -542,6 +608,9 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
             </div>
           )}
         </div>
+
+        {/* Relational SQL Database Analytics & Multi-Table JOINs */}
+        <SqlAnalyticsSection />
 
         <div className="mt-6 flex justify-center pb-4">
           <button

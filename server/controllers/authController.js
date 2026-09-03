@@ -1,10 +1,9 @@
 import User from "../models/user.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-// token-based reset flow removed; no crypto or dotenv needed here
+import axios from "axios";
 
-const getJwtSecret = () => process.env.JWT_SECRET || process.env.SECRET_KEY;
-
+const getJwtSecret = () => process.env.JWT_SECRET || process.env.SECRET_KEY || "qurate_dev_secret_jwt_key_2026";
 
 export const register = async (req, res) => {
     try {
@@ -14,6 +13,7 @@ export const register = async (req, res) => {
             email,
             stack,
             experienceLevel,
+            role = "user",
         } = req.body;
 
         const existingUser = await User.findOne({ email });
@@ -25,21 +25,37 @@ export const register = async (req, res) => {
         }
 
         const salt = await bcrypt.genSalt(10);
-
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = new User({
             username,
             email,
             password: hashedPassword,
-            stack,
-            experienceLevel,
+            stack: stack || [],
+            experienceLevel: experienceLevel || "beginner",
+            role: role === "admin" ? "admin" : "user",
         });
 
         await newUser.save();
 
+        const token = jwt.sign(
+            { id: newUser._id, role: newUser.role },
+            getJwtSecret(),
+            { expiresIn: "7d" }
+        );
+
         return res.status(201).json({
             message: "User registered successfully",
+            token,
+            user: {
+                id: newUser._id,
+                username: newUser.username,
+                email: newUser.email,
+                stack: newUser.stack,
+                experienceLevel: newUser.experienceLevel,
+                role: newUser.role,
+                avatar: newUser.avatar,
+            },
         });
     } catch (err) {
         return res.status(500).json({
@@ -47,7 +63,6 @@ export const register = async (req, res) => {
         });
     }
 };
-
 
 export const login = async (req, res) => {
     try {
@@ -73,12 +88,8 @@ export const login = async (req, res) => {
         }
 
         const jwtSecret = getJwtSecret();
-        if (!jwtSecret) {
-            return res.status(500).json({ error: 'JWT secret is not configured on the server' });
-        }
-
         const token = jwt.sign(
-            { id: existingUser._id },
+            { id: existingUser._id, role: existingUser.role || "user" },
             jwtSecret,
             { expiresIn: "7d" }
         );
@@ -91,6 +102,9 @@ export const login = async (req, res) => {
                 email: existingUser.email,
                 stack: existingUser.stack,
                 experienceLevel: existingUser.experienceLevel,
+                role: existingUser.role || "user",
+                avatar: existingUser.avatar || "",
+                githubUsername: existingUser.githubUsername || "",
             },
         });
     } catch (err) {
@@ -100,34 +114,115 @@ export const login = async (req, res) => {
     }
 };
 
+/**
+ * GitHub OAuth / 3rd-Party Login
+ * Exchanges GitHub OAuth code for user profile or links existing account
+ */
+export const githubOAuthLogin = async (req, res) => {
+    try {
+        const { code, githubUserData } = req.body;
+
+        let githubProfile = githubUserData;
+
+        // If authorization code provided, exchange with GitHub OAuth API
+        if (code && process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+            const tokenResponse = await axios.post(
+                "https://github.com/login/oauth/access_token",
+                {
+                    client_id: process.env.GITHUB_CLIENT_ID,
+                    client_secret: process.env.GITHUB_CLIENT_SECRET,
+                    code,
+                },
+                { headers: { Accept: "application/json" } }
+            );
+
+            const accessToken = tokenResponse.data.access_token;
+            if (accessToken) {
+                const userResponse = await axios.get("https://api.github.com/user", {
+                    headers: { Authorization: `Bearer ${accessToken}` },
+                });
+                githubProfile = userResponse.data;
+            }
+        }
+
+        if (!githubProfile || !githubProfile.login) {
+            return res.status(400).json({ error: "Invalid GitHub OAuth payload." });
+        }
+
+        const email = githubProfile.email || `${githubProfile.login.toLowerCase()}@github.com`;
+        let user = await User.findOne({ $or: [{ email }, { githubUsername: githubProfile.login }] });
+
+        if (!user) {
+            // Auto-provision OAuth user
+            const dummyPassword = await bcrypt.hash(Math.random().toString(36), 10);
+            user = new User({
+                username: githubProfile.name || githubProfile.login,
+                email,
+                password: dummyPassword,
+                githubUsername: githubProfile.login,
+                avatar: githubProfile.avatar_url || "",
+                stack: ["javascript", "react", "node.js"],
+                experienceLevel: "beginner",
+                role: "user",
+            });
+            await user.save();
+        } else if (!user.avatar && githubProfile.avatar_url) {
+            user.avatar = githubProfile.avatar_url;
+            await user.save();
+        }
+
+        const token = jwt.sign(
+            { id: user._id, role: user.role || "user" },
+            getJwtSecret(),
+            { expiresIn: "7d" }
+        );
+
+        return res.status(200).json({
+            message: "GitHub OAuth login successful",
+            token,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                stack: user.stack,
+                experienceLevel: user.experienceLevel,
+                role: user.role || "user",
+                avatar: user.avatar || "",
+                githubUsername: user.githubUsername,
+            },
+        });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 export const resetPassword = async (req, res) => {
-  try {
-    const { email, password } = req.body
-    if (!email || !password) return res.status(400).json({ message: 'Email and password required' })
-    const user = await User.findOne({ email })
-    if (!user) return res.status(400).json({ message: 'User not found' })
-    const salt = await bcrypt.genSalt(10)
-    user.password = await bcrypt.hash(password, salt)
-    await user.save()
-    return res.status(200).json({ message: 'Password has been reset successfully' })
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
-  }
-}
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) return res.status(400).json({ message: "Email and password required" });
+        const user = await User.findOne({ email });
+        if (!user) return res.status(400).json({ message: "User not found" });
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(password, salt);
+        await user.save();
+        return res.status(200).json({ message: "Password has been reset successfully" });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
 
 export const changeEmail = async (req, res) => {
     try {
-        const { email, newEmail } = req.body
-        if (!email || !newEmail) return res.status(400).json({ message: 'Email and newEmail required' })
-        const user = await User.findOne({ email })
-        if (!user) return res.status(400).json({ message: 'User not found' })
-        const existing = await User.findOne({ email: newEmail })
-        if (existing) return res.status(400).json({ message: 'New email already in use' })
-        user.email = newEmail
-        await user.save()
-        return res.status(200).json({ message: 'Email updated successfully' })
+        const { email, newEmail } = req.body;
+        if (!email || !newEmail) return res.status(400).json({ message: "Email and newEmail required" });
+        const user = await User.findOne({ email });
+        if (!user) return res.status(400).json({ message: "User not found" });
+        const existing = await User.findOne({ email: newEmail });
+        if (existing) return res.status(400).json({ message: "New email already in use" });
+        user.email = newEmail;
+        await user.save();
+        return res.status(200).json({ message: "Email updated successfully" });
     } catch (err) {
-        return res.status(500).json({ error: err.message })
+        return res.status(500).json({ error: err.message });
     }
-}
-
+};
