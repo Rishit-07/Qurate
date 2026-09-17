@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Routes, Route, Navigate, useNavigate, useLocation, Link } from 'react-router-dom'
 import './App.css'
 import AuthPage from './pages/AuthPage.jsx'
 import AboutPage from './pages/AboutPage.jsx'
@@ -8,6 +9,7 @@ import DiscoveryFeed from './pages/DiscoveryFeed.jsx'
 import Profile from './pages/Profile.jsx'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx'
 import TermsPage from './pages/TermsPage.jsx'
+import ProtectedRoute from './components/ProtectedRoute.jsx'
 
 const BOOKMARKS_STORAGE_KEY = 'qurateBookmarks'
 const CONTRIBUTION_STATUS_OPTIONS = ['merged', 'submitted', 'planned']
@@ -15,9 +17,9 @@ const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'htt
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
 
 function App() {
-  const [view, setView] = useState(() =>
-    localStorage.getItem('qurateToken') ? 'feed' : 'auth',
-  )
+  const navigate = useNavigate()
+  const location = useLocation()
+
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('qurateUser')
     return savedUser ? JSON.parse(savedUser) : null
@@ -58,7 +60,6 @@ function App() {
         }))
 
         setBookmarks((current) => {
-          // Only set if still empty
           if (current.length > 0) return current
           return mapped
         })
@@ -73,11 +74,12 @@ function App() {
       cancelled = true
     }
   }, [contributionRefreshKey])
+
   function handleLogin(userData, token) {
     localStorage.setItem('qurateToken', token)
     localStorage.setItem('qurateUser', JSON.stringify(userData))
     setUser(userData)
-    setView('feed')
+    navigate('/feed')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -85,21 +87,36 @@ function App() {
     localStorage.removeItem('qurateToken')
     localStorage.removeItem('qurateUser')
     setUser(null)
-    setView('auth')
+    navigate('/auth')
   }
 
   function handleViewChange(nextView) {
-    // Protect certain views from unauthenticated access
+    const routeMap = {
+      feed: '/feed',
+      discover: '/discover',
+      bookmarks: '/bookmarks',
+      profile: '/profile',
+      auth: '/auth',
+      about: '/about',
+      privacy: '/privacy',
+      terms: '/terms',
+      concepts: '/concepts',
+    }
+
+    const path = routeMap[nextView] || `/${nextView}`
+
+    // Protect routes
     const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
     const protectedViews = ['feed', 'discover', 'bookmarks', 'profile']
     if (protectedViews.includes(nextView) && !token) {
-      setView('auth')
+      navigate('/auth')
       setToast({ type: 'info', text: 'Sign in to access that page.' })
       window.scrollTo({ top: 0, behavior: 'smooth' })
       setTimeout(() => setToast(null), 3000)
       return
     }
-    setView(nextView)
+
+    navigate(path)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -139,7 +156,7 @@ function App() {
           setContributionRefreshKey((current) => current + 1)
         }
       } catch {
-        // keep bookmarks local even if the sync fails; Profile can retry on the next render
+        // keep bookmarks local even if sync fails
       }
     }
 
@@ -250,61 +267,84 @@ function App() {
     openBookmarkStatusPicker(issue)
   }
 
-  let activeView = <AuthPage onLogin={handleLogin} onNavigate={handleViewChange} />
-
-  if (view === 'bookmarks') {
-    activeView = (
-      <BookmarkPage
-        bookmarks={bookmarks}
-        onNavigate={handleViewChange}
-        onSignOut={handleSignOut}
-        onToggleBookmark={toggleBookmark}
-        onUpdateBookmarkStatus={updateContributionStatus}
-      />
-    )
-  } else if (view === 'discover') {
-    activeView = (
-      <DiscoverPage
-        bookmarks={bookmarks}
-        onNavigate={handleViewChange}
-        onSignOut={handleSignOut}
-        onToggleBookmark={toggleBookmark}
-      />
-    )
-  } else if (view === 'feed') {
-    activeView = (
-      <DiscoveryFeed
-        user={user}
-        bookmarks={bookmarks}
-        onNavigate={handleViewChange}
-        onSignOut={handleSignOut}
-        onToggleBookmark={toggleBookmark}
-      />
-    )
-  } else if (view === 'profile') {
-    activeView = (
-      <Profile
-        user={user}
-        onNavigate={handleViewChange}
-        onSignOut={handleSignOut}
-        contributionRefreshKey={contributionRefreshKey}
-        onUserUpdate={setUser}
-      />
-    )
-  } else if (view === 'about') {
-    activeView = <AboutPage onNavigate={handleViewChange} />
-  } else if (view === 'privacy') {
-    activeView = <PrivacyPolicyPage onNavigate={handleViewChange} />
-  } else if (view === 'terms') {
-    activeView = <TermsPage onNavigate={handleViewChange} />
-  }
-
   return (
     <div className="min-h-screen bg-[#F7F5F0] text-[#1A1A18]">
       <div className="flex min-h-screen flex-col">
-        <div className="flex-1">{activeView}</div>
+        <div className="flex-1">
+          <Routes>
+            <Route
+              path="/"
+              element={<Navigate to={localStorage.getItem('qurateToken') ? '/feed' : '/auth'} replace />}
+            />
+            <Route
+              path="/auth"
+              element={<AuthPage onLogin={handleLogin} onNavigate={handleViewChange} />}
+            />
+            <Route
+              path="/feed"
+              element={
+                <ProtectedRoute>
+                  <DiscoveryFeed
+                    user={user}
+                    bookmarks={bookmarks}
+                    onNavigate={handleViewChange}
+                    onSignOut={handleSignOut}
+                    onToggleBookmark={toggleBookmark}
+                  />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/discover"
+              element={
+                <ProtectedRoute>
+                  <DiscoverPage
+                    bookmarks={bookmarks}
+                    onNavigate={handleViewChange}
+                    onSignOut={handleSignOut}
+                    onToggleBookmark={toggleBookmark}
+                  />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/bookmarks"
+              element={
+                <ProtectedRoute>
+                  <BookmarkPage
+                    bookmarks={bookmarks}
+                    onNavigate={handleViewChange}
+                    onSignOut={handleSignOut}
+                    onToggleBookmark={toggleBookmark}
+                    onUpdateBookmarkStatus={updateContributionStatus}
+                  />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile
+                    user={user}
+                    onNavigate={handleViewChange}
+                    onSignOut={handleSignOut}
+                    contributionRefreshKey={contributionRefreshKey}
+                    onUserUpdate={setUser}
+                  />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/about" element={<AboutPage onNavigate={handleViewChange} />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage onNavigate={handleViewChange} />} />
+            <Route path="/terms" element={<TermsPage onNavigate={handleViewChange} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+
         <GlobalFooter onNavigate={handleViewChange} />
       </div>
+
       {pendingBookmarkIssue && (
         <BookmarkStatusModal
           issue={pendingBookmarkIssue}
@@ -423,6 +463,10 @@ function GlobalFooter({ onNavigate }) {
         <div className="mt-12 flex flex-col gap-3 border-t border-[#1A1A18]/10 pt-5 text-xs font-semibold uppercase tracking-[0.22em] text-[#1A1A18]/42 sm:flex-row sm:items-center sm:justify-between">
           <p>© Qurate</p>
           <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <button type="button" onClick={() => onNavigate?.('about')} className="transition hover:text-[#2D6A4F]">
+              About
+            </button>
+            <span aria-hidden="true">·</span>
             <button type="button" onClick={() => onNavigate?.('privacy')} className="transition hover:text-[#2D6A4F]">
               Privacy Policy
             </button>
@@ -438,3 +482,4 @@ function GlobalFooter({ onNavigate }) {
 }
 
 export default App
+
