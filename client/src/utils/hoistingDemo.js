@@ -1,89 +1,114 @@
 /**
- * Concept: JavaScript — Hoisting
+ * Concept: JavaScript — Hoisting & The Temporal Dead Zone (TDZ)
  * 
- * In JavaScript, Hoisting is the behavior where variable and function declarations
- * are allocated memory during the Compilation Phase, before any code is executed.
+ * In JavaScript, Hoisting is the behavior where variable, function, and class declarations
+ * are allocated memory during the Compilation/Creation Phase, before code is executed.
  * 
- * Key Rules:
- * 1. Function Declarations:
- *    Hoisted completely with their body implementation. Can be invoked before lexical definition.
- * 2. Function Expressions & Arrow Functions:
- *    Variables storing functions follow variable hoisting rules (e.g. `const fn = () => ...` stays in TDZ).
- * 3. `var` Variables:
- *    Hoisted to the top of the function/global scope and initialized with `undefined`.
- * 4. `let` and `const` Variables:
- *    Hoisted to the top of their block scope, but placed in the Temporal Dead Zone (TDZ).
- *    Accessing them before lexical initialization throws a ReferenceError.
+ * Core Behaviors Demonstrated in this File:
+ * 1. Function Declaration Hoisting (Lines 25-42):
+ *    Function declarations are hoisted completely with their implementation body.
+ *    They can be invoked BEFORE their lexical declaration statement in the source code.
+ * 
+ * 2. `var` Variable Hoisting (Lines 45-65):
+ *    Variables declared with `var` are hoisted to the top of their function/global scope
+ *    and initialized to `undefined`. Accessing them before assignment yields `undefined`.
+ * 
+ * 3. `let` and `const` Temporal Dead Zone (TDZ) (Lines 68-95):
+ *    Variables declared with `let` and `const` are hoisted into their enclosing block scope,
+ *    but are NOT initialized. The time between entering the scope and reaching the declaration
+ *    is the Temporal Dead Zone (TDZ). Accessing the variable in the TDZ throws a `ReferenceError`.
  */
 
-// 1. Live Function Declaration Hoisting:
-// Note: hoistedFunction can be invoked before its lexical definition below!
+// 1. Function Declaration Hoisting Demonstration
 export function testFunctionHoisting() {
-  const resultBefore = hoistedGreeting('Contributor')
+  // Line 28: Function invocation occurs BEFORE the lexical declaration on line 35
+  const invocationBefore = calculateIssuePriorityScore(8, 'beginner')
 
-  function hoistedGreeting(name) {
-    return `Hello, ${name}! (Invoked via hoisted function declaration)`
+  // Line 32: Function Declaration — Hoisted with its entire body during the compile phase
+  function calculateIssuePriorityScore(fitScore, complexity) {
+    return `Calculated Priority: ${fitScore}/10 for ${complexity} complexity`
   }
 
-  const resultAfter = hoistedGreeting('Contributor')
+  // Line 37: Invocation after lexical declaration
+  const invocationAfter = calculateIssuePriorityScore(8, 'beginner')
 
   return {
-    canInvokeBeforeDefinition: true,
-    resultBefore,
-    resultAfter,
-    explanation: 'Function declarations are fully hoisted with their body during the compile phase.',
+    success: true,
+    invokedBeforeDeclaration: invocationBefore,
+    invokedAfterDeclaration: invocationAfter,
+    explanation: 'Function declarations are fully hoisted with their body during compilation.',
   }
 }
 
-// 2. Demonstration of Temporal Dead Zone (TDZ) for let/const vs var
-export function testVariableHoisting() {
-  const log = []
+// 2. Variable Hoisting with `var` Demonstration
+export function testVarHoisting() {
+  let accessedValueBeforeAssignment
+  let accessedValueAfterAssignment
 
-  // Behavior of 'var':
-  // In JavaScript, `var x` is hoisted and initialized as undefined.
-  // We demonstrate how the engine handles this:
-  var demonstratedVar = 'Initial Var'
-  log.push({
-    type: 'var',
-    hoistedValue: 'undefined (before assignment)',
-    assignedValue: demonstratedVar,
-    status: 'Safe from ReferenceError, but dangerous for bugs',
-  })
+  // Immediate execution scope
+  ;(() => {
+    // Line 54: Accessing 'cachedFilter' BEFORE its var declaration line
+    // Memory is allocated, initialized to `undefined` during creation phase.
+    accessedValueBeforeAssignment = cachedFilter // returns `undefined` (NOT a ReferenceError)
 
-  // Behavior of 'let' and 'const':
-  // In the TDZ (Temporal Dead Zone), accessing the variable causes a ReferenceError.
-  let isTdzActive = true
+    // Line 58: Assignment occurs at runtime
+    var cachedFilter = 'React'
+
+    accessedValueAfterAssignment = cachedFilter // returns 'React'
+  })()
+
+  return {
+    hoistedValue: accessedValueBeforeAssignment, // undefined
+    assignedValue: accessedValueAfterAssignment, // 'React'
+    explanation: 'var is hoisted and initialized to undefined in the creation phase.',
+  }
+}
+
+// 3. Temporal Dead Zone (TDZ) Demonstration with `let` and `const`
+export function testTemporalDeadZone() {
+  let caughtError = null
+  let tdzTriggered = false
+
+  // Demonstrating the TDZ in a block scope
   try {
-    // If we evaluated an undeclared TDZ variable:
-    // log.push(uninitializedLet) -> ReferenceError: Cannot access before initialization
-    log.push({
-      type: 'let/const',
-      hoistedValue: 'Temporal Dead Zone (TDZ)',
-      assignedValue: isTdzActive ? 'Active' : 'Inactive',
-      status: 'Throws ReferenceError if accessed before line of declaration',
-    })
+    ;(() => {
+      // Line 77: Attempting to access 'pendingIssueId' BEFORE line 82
+      // 'pendingIssueId' exists in the TDZ from block entrance until the let statement executes.
+      // This MUST throw a ReferenceError at runtime:
+      const readAttempt = pendingIssueId + 1
+
+      // Line 82: The declaration statement initializes the variable
+      let pendingIssueId = 404
+      return readAttempt
+    })()
   } catch (err) {
-    log.push({ type: 'let/const', error: err.message })
+    tdzTriggered = true
+    caughtError = {
+      name: err.name, // "ReferenceError"
+      message: err.message, // "Cannot access 'pendingIssueId' before initialization"
+    }
   }
 
   return {
-    log,
-    summary: 'var is initialized as undefined; let/const enter the Temporal Dead Zone (TDZ) until executed.',
+    tdzTriggered,
+    caughtError,
+    explanation:
+      'let/const are hoisted but remain in the Temporal Dead Zone (TDZ). Accessing them throws ReferenceError.',
   }
 }
 
-// 3. Execution Context Scope Resolver
+// 4. Comprehensive Hoisting Diagnostics Suite
 export function runHoistingDiagnostics() {
-  const funcTest = testFunctionHoisting()
-  const varTest = testVariableHoisting()
+  const functionTest = testFunctionHoisting()
+  const varTest = testVarHoisting()
+  const tdzTest = testTemporalDeadZone()
 
   return {
-    concept: 'JavaScript Hoisting & Execution Contexts',
-    phases: [
-      '1. Creation/Compilation Phase: Memory allocation for declarations',
-      '2. Execution Phase: Code executed line-by-line, values assigned',
-    ],
-    functionHoisting: funcTest,
-    variableHoisting: varTest,
+    concept: 'JavaScript Hoisting & Execution Context Lifecycle',
+    evidence: {
+      functionHoisting: functionTest,
+      varHoisting: varTest,
+      temporalDeadZone: tdzTest,
+    },
   }
 }

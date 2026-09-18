@@ -63,10 +63,27 @@ Every commit must follow the [Conventional Commits](https://www.conventionalcomm
 
 ---
 
-## 3. Pull Request & Code Review Lifecycle
+## 3. Pull Request & Collaborative Review Lifecycle
 
-1. **Branch Out:** Always branch out from `develop` (`git checkout -b feature/my-feature develop`).
-2. **Atomic Commits:** Make small, logical, well-described commits.
-3. **Open PR:** Submit a Pull Request targeting `develop` using `.github/pull_request_template.md`.
-4. **Mandatory Checklist:** Ensure all mandatory concepts are checked off.
-5. **Peer Review & CI:** Automated checks (`npm run build`, linting) must pass before squash-and-merge.
+1. **Branch Out:** Always branch out from `develop`:
+   ```bash
+   git checkout develop
+   git pull origin develop
+   git checkout -b feature/my-feature
+   ```
+2. **Atomic Commits:** Make small, logical commits adhering strictly to Conventional Commits.
+3. **Local Rebase & Conflict Resolution:** Before opening a PR, ensure your feature branch is up to date with `develop`:
+   ```bash
+   git fetch origin
+   git rebase origin/develop
+   # If conflicts occur: resolve conflicts, git add <resolved-files>, git rebase --continue
+   ```
+4. **Open Pull Request:** Target `develop` using `.github/pull_request_template.md`.
+5. **Branch Protection Rules:**
+   - Require at least 1 approving peer review before merging.
+   - Require status checks to pass (`npm run build` and backend test suites).
+   - Enforce linear history using **Squash and Merge** to prevent messy merge bubbles.
+6. **Hotfix Workflow:**
+   - Urgent production bugs branch directly from `main` (`hotfix/fix-auth-crash`).
+   - Merged into `main` with a release tag (e.g., `v1.2.1`), and immediately back-merged into `develop` to maintain synchronization.
+

@@ -27,48 +27,74 @@ export function scheduleMacrotask(taskFn, delay = 0) {
 }
 
 /**
- * 3. Non-blocking Chunked Batch Processor
- * Processes large arrays of items (e.g. issues, search embeddings) without freezing the UI.
- * Yields back to the event loop after each chunk, keeping the browser responsive at 60fps.
+ * 3. Non-blocking Chunked Batch Processor with Promise Chaining
+ * 
+ * Implements explicit Promise Chaining to process large collections (e.g. issues, search results)
+ * without blocking the JavaScript main thread.
+ * 
+ * Architecture & Event Loop Flow:
+ * - Microtasks vs Macrotasks distinction:
+ *   1. Macrotasks (`setTimeout(..., 0)`): Yield control back to the browser event loop, allowing UI rendering,
+ *      style recalculation, and user interactions to execute between chunks.
+ *   2. Microtasks (`Promise.then()` callbacks): Execute immediately after the current macrotask tick finishes,
+ *      before any subsequent macrotask is dequeued.
+ * 
+ * - Promise Chaining & Error Handling:
+ *   Instead of nested callback recursion, each chunk is chained sequentially using `.then()`.
+ *   If an error occurs in any chunk processing function, the entire Promise chain short-circuits
+ *   and propagates directly down to the terminal `.catch()` handler, ensuring clean centralized error recovery.
  * 
  * @param {Array} items Array of items to process
  * @param {Function} processItemFn Worker function applied to each item
- * @param {number} chunkSize Number of items processed synchronously before yielding
+ * @param {number} chunkSize Number of items processed per chunk before yielding
  * @param {Function} onProgress Optional callback (processedCount, total)
- * @returns {Promise<Array>} Results collected asynchronously
+ * @returns {Promise<Array>} Chained Promise resolving to all processed items
  */
-export async function processInChunksNonBlocking(items, processItemFn, chunkSize = 25, onProgress) {
+export function processInChunksNonBlocking(items, processItemFn, chunkSize = 25, onProgress) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return Promise.resolve([])
+  }
+
   const results = []
-  let index = 0
+  const totalChunks = Math.ceil(items.length / chunkSize)
 
-  return new Promise((resolve, reject) => {
-    function processNextChunk() {
-      try {
-        const chunkEnd = Math.min(index + chunkSize, items.length)
+  // Initialize the Promise chain with an anchor resolved Promise
+  let chunkChain = Promise.resolve()
 
-        for (; index < chunkEnd; index++) {
-          results.push(processItemFn(items[index], index))
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const start = chunkIndex * chunkSize
+    const end = Math.min(start + chunkSize, items.length)
+
+    // Step A: Chain a macrotask yield using setTimeout so the event loop can repaint and handle UI input
+    chunkChain = chunkChain
+      .then(() => {
+        return new Promise((resolveDelay) => {
+          setTimeout(resolveDelay, 0)
+        })
+      })
+      // Step B: Chain the microtask execution step to process the current chunk slice
+      .then(() => {
+        for (let i = start; i < end; i++) {
+          results.push(processItemFn(items[i], i))
         }
 
-        if (onProgress) {
-          onProgress(index, items.length)
+        if (typeof onProgress === 'function') {
+          onProgress(end, items.length)
         }
 
-        if (index < items.length) {
-          // Yield to event loop macrotask queue so UI renders and user interactions are not blocked
-          setTimeout(processNextChunk, 0)
-        } else {
-          resolve(results)
-        }
-      } catch (err) {
-        reject(err)
-      }
-    }
+        return results
+      })
+  }
 
-    // Start processing
-    processNextChunk()
-  })
+  // Step C: Terminal catch block for centralized error handling across the entire Promise chain
+  return chunkChain
+    .then(() => results)
+    .catch((error) => {
+      console.error('Error during non-blocking chunk processing chain:', error)
+      throw error // Re-throw to propagate error to the caller's catch block
+    })
 }
+
 
 /**
  * 4. Measure Event Loop Lag

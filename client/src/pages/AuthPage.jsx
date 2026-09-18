@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams, useLocation } from 'react-router-dom'
 
 const RAW_API_BASE =
   import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
@@ -12,7 +13,23 @@ const initialForm = {
 }
 
 function AuthPage({ onLogin, onNavigate }) {
-  const [mode, setMode] = useState('register')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+
+  // Route Parameters Management:
+  // Reads query parameter ?mode=login or ?mode=register from URL for deep linking
+  const queryMode = searchParams.get('mode')
+  const [mode, setMode] = useState(() => {
+    return queryMode === 'login' || queryMode === 'reset' ? queryMode : 'register'
+  })
+
+  // Synchronize route parameters with authentication mode
+  useEffect(() => {
+    if (queryMode && ['register', 'login', 'reset', 'change-email'].includes(queryMode)) {
+      setMode(queryMode)
+    }
+  }, [queryMode])
+
   const [selectedStack, setSelectedStack] = useState(['React', 'Node.js'])
   const [form, setForm] = useState(initialForm)
   const [status, setStatus] = useState({ type: '', message: '' })
@@ -66,8 +83,10 @@ function AuthPage({ onLogin, onNavigate }) {
 
   function switchMode(nextMode) {
     setMode(nextMode)
+    setSearchParams({ mode: nextMode })
     setStatus({ type: '', message: '' })
   }
+
 
   async function handleAuthSubmit(event) {
     event.preventDefault()

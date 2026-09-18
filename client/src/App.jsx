@@ -79,9 +79,12 @@ function App() {
     localStorage.setItem('qurateToken', token)
     localStorage.setItem('qurateUser', JSON.stringify(userData))
     setUser(userData)
-    navigate('/feed')
+    // Dynamic route parameter handling: Redirects back to previously requested protected route
+    const targetPath = location.state?.from?.pathname || '/feed'
+    navigate(targetPath, { replace: true })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
 
   function handleSignOut() {
     localStorage.removeItem('qurateToken')
