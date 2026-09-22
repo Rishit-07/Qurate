@@ -2,7 +2,7 @@
 
 **Module:** AI Issue Scoring & Autonomous Agent Pipeline  
 **Curriculum Concept:** Prompt Engineering (AI App Eng • 0.2 pts)  
-**LLM Engine:** Google Gemini (`gemini-2.5-flash`)
+**LLM Engine:** Google Gemini (`gemini-3.6-flash`)
 
 ---
 

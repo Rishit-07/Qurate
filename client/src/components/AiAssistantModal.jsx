@@ -16,7 +16,7 @@ export default function AiAssistantModal({ issue, user, onClose }) {
   const [agentResult, setAgentResult] = useState(null)
   const [agentError, setAgentError] = useState('')
 
-  const token = localStorage.getItem('token') || ''
+  const token = localStorage.getItem('token') || localStorage.getItem('qurateToken') || ''
 
   // Start Streaming Analysis
   async function startStreaming() {
@@ -39,6 +39,11 @@ export default function AiAssistantModal({ issue, user, onClose }) {
         }),
       })
 
+      if (!response.ok) {
+        const errPayload = await response.json().catch(() => ({}))
+        throw new Error(errPayload.error || errPayload.message || `Server error (${response.status})`)
+      }
+
       if (!response.body) throw new Error('ReadableStream not supported.')
 
       const reader = response.body.getReader()
@@ -56,6 +61,10 @@ export default function AiAssistantModal({ issue, user, onClose }) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.replace('data: ', ''))
+              if (data.error) {
+                accumulated += `\n\n❌ ${data.error}`
+                setStreamText(accumulated)
+              }
               if (data.text) {
                 accumulated += data.text
                 setStreamText(accumulated)
@@ -70,7 +79,7 @@ export default function AiAssistantModal({ issue, user, onClose }) {
         }
       }
     } catch (err) {
-      setStreamText((prev) => prev + `\n\n❌ Error: ${err.message}`)
+      setStreamText((prev) => prev ? `${prev}\n\n❌ Error: ${err.message}` : `❌ Error: ${err.message}`)
     } finally {
       setIsStreaming(false)
     }
@@ -92,7 +101,7 @@ export default function AiAssistantModal({ issue, user, onClose }) {
         body: JSON.stringify({ issue }),
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Agent execution failed')
+      if (!response.ok) throw new Error(data.error || data.message || 'Agent execution failed')
       setAgentResult(data)
     } catch (err) {
       setAgentError(err.message)
@@ -117,7 +126,7 @@ export default function AiAssistantModal({ issue, user, onClose }) {
                 AI Intelligence Hub
               </span>
               <span className="text-xs font-semibold text-[#1A1A18]/50">
-                Gemini 2.5 Flash
+                Gemini 3.6 Flash
               </span>
             </div>
             <h2 className="mt-1 line-clamp-1 [font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">

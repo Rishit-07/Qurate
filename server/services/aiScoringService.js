@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { checkPromptSafety, wrapUntrustedInput } from "./promptDefenseService.js";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 // Approximate Gemini 2.5 Flash pricing per 1M tokens ($0.15/1M input, $0.60/1M output)
 const INPUT_COST_PER_M = 0.15;

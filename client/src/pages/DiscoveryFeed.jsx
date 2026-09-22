@@ -301,7 +301,7 @@ function DiscoveryFeed({
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+                    Authorization: `Bearer ${localStorage.getItem('token') || localStorage.getItem('qurateToken') || ''}`,
                   },
                   body: JSON.stringify({ query: ragQuery }),
                 })
@@ -489,7 +489,7 @@ function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi }) {
           ⚡ AI Deep Dive & Roadmap (Streaming / Multi-Step Agent)
         </button>
         <span className="text-[11px] font-medium text-[#1A1A18]/50">
-          Gemini 2.5 Flash
+          Gemini 3.6 Flash
         </span>
       </div>
     </article>

@@ -77,6 +77,7 @@ function App() {
 
   function handleLogin(userData, token) {
     localStorage.setItem('qurateToken', token)
+    localStorage.setItem('token', token)
     localStorage.setItem('qurateUser', JSON.stringify(userData))
     setUser(userData)
     // Dynamic route parameter handling: Redirects back to previously requested protected route
@@ -88,6 +89,7 @@ function App() {
 
   function handleSignOut() {
     localStorage.removeItem('qurateToken')
+    localStorage.removeItem('token')
     localStorage.removeItem('qurateUser')
     setUser(null)
     navigate('/auth')

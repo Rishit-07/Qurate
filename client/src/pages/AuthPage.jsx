@@ -781,36 +781,6 @@ function AuthPage({ onLogin, onNavigate }) {
                   `Sign in with @${previewUser?.login || customGithubUser.trim() || 'GitHub'}`
                 )}
               </button>
-
-              <div className="relative my-1 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#1A1A18]/10" /></div>
-                <span className="relative bg-[#F7F5F0] px-2 text-[11px] font-semibold text-[#1A1A18]/40">OR DEMO</span>
-              </div>
-
-              <button
-                type="button"
-                disabled={isGithubLoading}
-                onClick={() => {
-                  const demoNum = Math.floor(Math.random() * 900) + 100
-                  completeGithubLogin({
-                    githubUserData: {
-                      login: `github_contributor_${demoNum}`,
-                      name: 'GitHub Contributor',
-                      avatar_url: 'https://avatars.githubusercontent.com/u/9919?v=4',
-                    },
-                  })
-                }}
-                className="flex h-10 w-full items-center justify-center rounded-md border border-[#1A1A18]/20 bg-white/60 px-4 text-xs font-semibold text-[#1A1A18] hover:bg-white transition"
-              >
-                Quick Demo Contributor Login
-              </button>
-            </div>
-
-            {/* Developer Notice */}
-            <div className="mt-5 border-t border-[#1A1A18]/10 pt-4 text-left">
-              <p className="text-[11px] leading-relaxed text-[#1A1A18]/50">
-                <strong className="text-[#1A1A18]/70">OAuth Setup:</strong> For full GitHub OAuth redirection without entering a username, configure <code className="rounded bg-[#1A1A18]/5 px-1 py-0.5 text-[#1A1A18]/75">VITE_GITHUB_CLIENT_ID</code> in <code className="text-[#1A1A18]/75">client/.env</code> and <code className="text-[#1A1A18]/75">GITHUB_CLIENT_ID</code> + <code className="text-[#1A1A18]/75">GITHUB_CLIENT_SECRET</code> in <code className="text-[#1A1A18]/75">server/.env</code>.
-              </p>
             </div>
           </div>
         </div>

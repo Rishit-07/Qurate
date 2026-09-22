@@ -8,7 +8,7 @@ import { checkPromptSafety, wrapUntrustedInput } from "../services/promptDefense
 import User from "../models/user.js";
 
 const router = express.Router();
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 /**
  * 1. Streaming Responses: Server-Sent Events (SSE) AI Analysis
