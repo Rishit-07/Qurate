@@ -43,6 +43,114 @@ function AuthPage({ onLogin, onNavigate }) {
   const [changeNewEmail, setChangeNewEmail] = useState('')
   const [changeEmailMsg, setChangeEmailMsg] = useState({ type: '', message: '' })
 
+  // GitHub Auth states
+  const [isGithubLoading, setIsGithubLoading] = useState(false)
+  const [githubError, setGithubError] = useState('')
+  const [isGithubModalOpen, setIsGithubModalOpen] = useState(false)
+  const [customGithubUser, setCustomGithubUser] = useState('')
+  const [previewUser, setPreviewUser] = useState(null)
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState('')
+
+  // Handle OAuth code exchange if redirected from GitHub
+  useEffect(() => {
+    const code = searchParams.get('code')
+    if (!code) return
+
+    let cancelled = false
+    async function exchangeOAuthCode() {
+      setIsGithubLoading(true)
+      setGithubError('')
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/auth/github`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'GitHub authorization failed')
+        if (!cancelled) {
+          onLogin(data.user, data.token)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setGithubError(err.message || 'GitHub authorization failed')
+          setStatus({ type: 'error', message: err.message || 'GitHub authorization failed' })
+        }
+      } finally {
+        if (!cancelled) {
+          setIsGithubLoading(false)
+          searchParams.delete('code')
+          setSearchParams(searchParams, { replace: true })
+        }
+      }
+    }
+
+    exchangeOAuthCode()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams])
+
+  // Look up GitHub public user profile
+  async function fetchPreview(username) {
+    const clean = (username || '').trim()
+    if (!clean) {
+      setPreviewUser(null)
+      setPreviewError('')
+      return
+    }
+    setIsPreviewLoading(true)
+    setPreviewError('')
+    try {
+      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(clean)}`)
+      if (!res.ok) {
+        if (res.status === 404) throw new Error(`@${clean} not found on GitHub`)
+        throw new Error('Could not find GitHub user')
+      }
+      const data = await res.json()
+      setPreviewUser(data)
+    } catch (err) {
+      setPreviewUser(null)
+      setPreviewError(err.message)
+    } finally {
+      setIsPreviewLoading(false)
+    }
+  }
+
+  // Complete GitHub authentication
+  async function completeGithubLogin(payload) {
+    try {
+      setIsGithubLoading(true)
+      setGithubError('')
+      const res = await fetch(`${API_BASE_URL}/api/auth/github`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'GitHub login failed')
+      setIsGithubModalOpen(false)
+      onLogin(data.user, data.token)
+    } catch (err) {
+      setGithubError(err.message || 'GitHub login failed')
+    } finally {
+      setIsGithubLoading(false)
+    }
+  }
+
+  // Handle "Continue with GitHub" button click
+  function handleGithubButtonClick() {
+    const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID
+    if (clientId) {
+      const redirectUri = encodeURIComponent(`${window.location.origin}/auth`)
+      window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=read:user,user:email&redirect_uri=${redirectUri}`
+      return
+    }
+    setGithubError('')
+    setIsGithubModalOpen(true)
+  }
+
   const isRegistering = mode === 'register'
 
   function updateForm(event) {
@@ -393,36 +501,28 @@ function AuthPage({ onLogin, onNavigate }) {
 
             <button
               type="button"
-              disabled={isSubmitting}
-              onClick={async () => {
-                try {
-                  setIsSubmitting(true)
-                  const mockGhUser = {
-                    login: `github_dev_${Math.floor(Math.random() * 1000)}`,
-                    name: 'GitHub Contributor',
-                    avatar_url: 'https://avatars.githubusercontent.com/u/9919?v=4',
-                  }
-                  const res = await fetch(`${API_BASE_URL}/api/auth/github`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ githubUserData: mockGhUser }),
-                  })
-                  const data = await res.json()
-                  if (!res.ok) throw new Error(data.error || 'GitHub login failed')
-                  onLogin(data.user, data.token)
-                } catch (err) {
-                  setStatus({ type: 'error', message: err.message })
-                } finally {
-                  setIsSubmitting(false)
-                }
-              }}
-              className="flex h-12 w-full items-center justify-center gap-3 rounded-md border border-[#1A1A18]/20 bg-white/70 px-5 text-sm font-bold text-[#1A1A18] shadow-sm transition hover:bg-white hover:border-[#1A1A18]/40"
+              disabled={isSubmitting || isGithubLoading}
+              onClick={handleGithubButtonClick}
+              className="flex h-12 w-full items-center justify-center gap-3 rounded-md border border-[#1A1A18]/20 bg-white/70 px-5 text-sm font-bold text-[#1A1A18] shadow-sm transition hover:bg-white hover:border-[#1A1A18]/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
-                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-              </svg>
-              Continue with GitHub
+              {isGithubLoading ? (
+                <svg className="h-5 w-5 animate-spin text-[#1A1A18]/70" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
+                  <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                </svg>
+              )}
+              {isGithubLoading ? 'Connecting to GitHub...' : 'Continue with GitHub'}
             </button>
+
+            {githubError && (
+              <p className="mt-2.5 rounded-md border border-red-700/20 bg-red-700/10 px-3.5 py-2.5 text-left text-xs font-medium text-red-800">
+                {githubError}
+              </p>
+            )}
           </form>
           )}
 
@@ -518,6 +618,203 @@ function AuthPage({ onLogin, onNavigate }) {
           </p>
         </div>
       </section>
+
+      {/* GitHub Connect / Quick Sign-in Modal */}
+      {isGithubModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A18]/60 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-xl border border-[#1A1A18]/15 bg-[#F7F5F0] p-6 sm:p-8 shadow-2xl text-left">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsGithubModalOpen(false)
+                setPreviewUser(null)
+                setPreviewError('')
+              }}
+              className="absolute right-5 top-5 rounded-md p-1.5 text-[#1A1A18]/50 hover:bg-[#1A1A18]/10 hover:text-[#1A1A18] transition"
+              aria-label="Close"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#1A1A18] text-white">
+                <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24">
+                  <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="[font-family:Georgia,serif] text-xl font-bold text-[#1A1A18]">Connect with GitHub</h3>
+                <p className="text-xs text-[#1A1A18]/60">Link your GitHub profile to personalize recommended issues and stats.</p>
+              </div>
+            </div>
+
+            {/* Username Input & Lookup */}
+            <div className="mt-6">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1A18]/65">
+                GitHub Username
+              </label>
+              <div className="mt-2 flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-sm font-semibold text-[#1A1A18]/40">@</span>
+                  <input
+                    type="text"
+                    value={customGithubUser}
+                    onChange={(e) => {
+                      setCustomGithubUser(e.target.value)
+                      setPreviewError('')
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        fetchPreview(customGithubUser)
+                      }
+                    }}
+                    placeholder="e.g. torvalds or your username"
+                    className="h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/80 pl-8 pr-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchPreview(customGithubUser)}
+                  disabled={isPreviewLoading || !customGithubUser.trim()}
+                  className="h-11 rounded-md border border-[#1A1A18]/20 bg-white px-4 text-xs font-bold text-[#1A1A18] hover:bg-[#1A1A18]/5 transition disabled:opacity-50"
+                >
+                  {isPreviewLoading ? 'Checking…' : 'Look up'}
+                </button>
+              </div>
+
+              {/* Quick suggestions */}
+              <div className="mt-2.5 flex items-center gap-1.5 flex-wrap text-xs text-[#1A1A18]/60">
+                <span>Try:</span>
+                {['torvalds', 'shadcn', 'yyx990803'].map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => {
+                      setCustomGithubUser(u)
+                      fetchPreview(u)
+                    }}
+                    className="rounded bg-white/70 border border-[#1A1A18]/10 px-2 py-0.5 text-xs font-medium text-[#2D6A4F] hover:border-[#2D6A4F] transition"
+                  >
+                    @{u}
+                  </button>
+                ))}
+              </div>
+
+              {previewError && (
+                <p className="mt-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded p-2">
+                  {previewError}
+                </p>
+              )}
+            </div>
+
+            {/* Profile Preview Card */}
+            {previewUser && (
+              <div className="mt-4 rounded-lg border border-[#2D6A4F]/30 bg-[#2D6A4F]/5 p-3.5 flex items-center gap-3.5">
+                <img
+                  src={previewUser.avatar_url}
+                  alt={previewUser.login}
+                  className="h-12 w-12 rounded-full border border-[#1A1A18]/10 object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-sm font-bold text-[#1A1A18]">{previewUser.name || previewUser.login}</p>
+                    <span className="text-[11px] font-semibold text-[#2D6A4F] bg-[#2D6A4F]/10 px-1.5 py-0.5 rounded">Verified</span>
+                  </div>
+                  <p className="truncate text-xs text-[#1A1A18]/60">@{previewUser.login} • {previewUser.public_repos || 0} public repos</p>
+                  {previewUser.bio && <p className="truncate text-[11px] text-[#1A1A18]/50 italic mt-0.5">{previewUser.bio}</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="mt-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  let userToLogin = previewUser
+                  const username = (customGithubUser || '').trim()
+                  if (!userToLogin && username) {
+                    try {
+                      setIsPreviewLoading(true)
+                      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`)
+                      if (res.ok) {
+                        userToLogin = await res.json()
+                        setPreviewUser(userToLogin)
+                      }
+                    } catch {
+                      // ignore error and fallback
+                    } finally {
+                      setIsPreviewLoading(false)
+                    }
+                  }
+
+                  const targetLogin = userToLogin?.login || username
+                  if (!targetLogin) return
+
+                  const payload = {
+                    githubUsername: targetLogin,
+                    githubUserData: {
+                      login: targetLogin,
+                      name: userToLogin?.name || targetLogin,
+                      avatar_url: userToLogin?.avatar_url || 'https://avatars.githubusercontent.com/u/9919?v=4',
+                      email: userToLogin?.email || `${targetLogin.toLowerCase()}@github.com`,
+                    },
+                  }
+                  completeGithubLogin(payload)
+                }}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#2D6A4F] px-4 text-sm font-bold text-[#F7F5F0] shadow-sm transition hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isGithubLoading ? (
+                  <>
+                    <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Signing in…
+                  </>
+                ) : (
+                  `Sign in with @${previewUser?.login || customGithubUser.trim() || 'GitHub'}`
+                )}
+              </button>
+
+              <div className="relative my-1 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#1A1A18]/10" /></div>
+                <span className="relative bg-[#F7F5F0] px-2 text-[11px] font-semibold text-[#1A1A18]/40">OR DEMO</span>
+              </div>
+
+              <button
+                type="button"
+                disabled={isGithubLoading}
+                onClick={() => {
+                  const demoNum = Math.floor(Math.random() * 900) + 100
+                  completeGithubLogin({
+                    githubUserData: {
+                      login: `github_contributor_${demoNum}`,
+                      name: 'GitHub Contributor',
+                      avatar_url: 'https://avatars.githubusercontent.com/u/9919?v=4',
+                    },
+                  })
+                }}
+                className="flex h-10 w-full items-center justify-center rounded-md border border-[#1A1A18]/20 bg-white/60 px-4 text-xs font-semibold text-[#1A1A18] hover:bg-white transition"
+              >
+                Quick Demo Contributor Login
+              </button>
+            </div>
+
+            {/* Developer Notice */}
+            <div className="mt-5 border-t border-[#1A1A18]/10 pt-4 text-left">
+              <p className="text-[11px] leading-relaxed text-[#1A1A18]/50">
+                <strong className="text-[#1A1A18]/70">OAuth Setup:</strong> For full GitHub OAuth redirection without entering a username, configure <code className="rounded bg-[#1A1A18]/5 px-1 py-0.5 text-[#1A1A18]/75">VITE_GITHUB_CLIENT_ID</code> in <code className="text-[#1A1A18]/75">client/.env</code> and <code className="text-[#1A1A18]/75">GITHUB_CLIENT_ID</code> + <code className="text-[#1A1A18]/75">GITHUB_CLIENT_SECRET</code> in <code className="text-[#1A1A18]/75">server/.env</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

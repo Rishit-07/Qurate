@@ -120,7 +120,7 @@ export const login = async (req, res) => {
  */
 export const githubOAuthLogin = async (req, res) => {
     try {
-        const { code, githubUserData } = req.body;
+        const { code, githubUserData, githubUsername } = req.body;
 
         let githubProfile = githubUserData;
 
@@ -145,8 +145,30 @@ export const githubOAuthLogin = async (req, res) => {
             }
         }
 
+        // If GitHub username provided directly, fetch public GitHub profile
+        if (!githubProfile && githubUsername && typeof githubUsername === "string") {
+            try {
+                const headers = {
+                    Accept: "application/vnd.github.v3+json",
+                    "User-Agent": "Qurate-App",
+                };
+                if (process.env.GITHUB_TOKEN) {
+                    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN.trim()}`;
+                }
+                const cleanUsername = encodeURIComponent(githubUsername.trim());
+                const userResponse = await axios.get(`https://api.github.com/users/${cleanUsername}`, { headers });
+                githubProfile = userResponse.data;
+            } catch (ghErr) {
+                const status = ghErr.response?.status || 500;
+                if (status === 404) {
+                    return res.status(404).json({ error: `GitHub user "${githubUsername}" not found.` });
+                }
+                return res.status(status).json({ error: ghErr.response?.data?.message || "Failed to fetch GitHub profile." });
+            }
+        }
+
         if (!githubProfile || !githubProfile.login) {
-            return res.status(400).json({ error: "Invalid GitHub OAuth payload." });
+            return res.status(400).json({ error: "Invalid GitHub OAuth payload or user not specified." });
         }
 
         const email = githubProfile.email || `${githubProfile.login.toLowerCase()}@github.com`;
