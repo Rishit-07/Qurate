@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import GrokCursorSearchCard from '../components/GrokCursorSearchCard'
+import GrokInsightCard from '../components/GrokInsightCard'
 
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
@@ -20,6 +22,9 @@ function DiscoverPage({
   const [typedPrompt, setTypedPrompt] = useState('')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
+  const [isGrokMode, setIsGrokMode] = useState(true)
+  const [grokInsight, setGrokInsight] = useState(null)
+  const [grokLoading, setGrokLoading] = useState(false)
   const [status, setStatus] = useState({
     loading: false,
     error: '',
@@ -46,11 +51,12 @@ function DiscoverPage({
   }, [promptIndex, typedPrompt])
 
   async function handleSearch(event) {
-    event.preventDefault()
+    if (event && event.preventDefault) event.preventDefault()
 
     if (!query.trim()) return
 
     setStatus({ loading: true, error: '', searched: true })
+    setGrokInsight(null)
 
     try {
       const response = await fetch(
@@ -62,8 +68,36 @@ function DiscoverPage({
         throw new Error(data.error || 'Could not search GitHub issues')
       }
 
-      setResults(data.issues || [])
+      const foundIssues = data.issues || []
+      setResults(foundIssues)
       setStatus({ loading: false, error: '', searched: true })
+
+      // If Grok Mode is enabled, fetch deep AI insights from Grok Bot
+      if (isGrokMode) {
+        setGrokLoading(true)
+        try {
+          const token = localStorage.getItem('token') || localStorage.getItem('qurateToken') || ''
+          const aiRes = await fetch(`${API_BASE_URL}/api/ai/grok-discover`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              query: query.trim(),
+              issues: foundIssues,
+            }),
+          })
+          if (aiRes.ok) {
+            const aiData = await aiRes.json()
+            setGrokInsight(aiData)
+          }
+        } catch (aiErr) {
+          console.warn('Grok insight error:', aiErr)
+        } finally {
+          setGrokLoading(false)
+        }
+      }
     } catch (error) {
       setStatus({
         loading: false,
@@ -118,30 +152,16 @@ function DiscoverPage({
             project easier for the next person to enter."
           </p>
 
-          <form onSubmit={handleSearch} className="mx-auto mt-12 max-w-4xl">
-            <label className="block rounded-2xl border border-[#1A1A18]/15 bg-white/50 p-5 text-left shadow-sm transition focus-within:border-[#2D6A4F] focus-within:ring-2 focus-within:ring-[#2D6A4F]/15">
-              <span className="text-sm font-bold uppercase tracking-[0.16em] text-[#1A1A18]/45">
-                Find issues
-              </span>
-              <div className="mt-3 flex items-start gap-4">
-                <textarea
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  rows={3}
-                  className="min-h-24 flex-1 resize-none bg-transparent text-2xl font-semibold leading-9 text-[#1A1A18] outline-none placeholder:text-[#1A1A18]/45"
-                  placeholder={typedPrompt}
-                />
-                <button
-                  type="submit"
-                  disabled={status.loading}
-                  className="mt-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#1A1A18]/15 bg-[#1A1A18] text-lg font-bold text-[#F7F5F0] transition hover:-translate-y-0.5 hover:bg-[#2D6A4F] disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="Search GitHub issues"
-                >
-                  ↑
-                </button>
-              </div>
-            </label>
-          </form>
+          {/* Cursor Interactive Grok Search Card */}
+          <GrokCursorSearchCard
+            query={query}
+            setQuery={setQuery}
+            onSearch={handleSearch}
+            loading={status.loading || grokLoading}
+            placeholder={typedPrompt}
+            isGrokMode={isGrokMode}
+            setIsGrokMode={setIsGrokMode}
+          />
 
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             {prompts.slice(0, 3).map((prompt) => (
@@ -162,6 +182,15 @@ function DiscoverPage({
         </div>
 
         <div className="mt-14 space-y-5 pb-12">
+          {/* Grok Bot AI Insight Breakdown */}
+          {grokInsight && isGrokMode && (
+            <GrokInsightCard
+              insight={grokInsight}
+              query={query}
+              onDismiss={() => setGrokInsight(null)}
+            />
+          )}
+
           {status.loading &&
             Array.from({ length: 3 }).map((_, index) => (
               <div
