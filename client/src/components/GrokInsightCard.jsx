@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import GrokBotMascot from './GrokBotMascot'
 
 /**
  * GrokInsightCard Component
@@ -29,23 +30,21 @@ export default function GrokInsightCard({
   }
 
   return (
-    <div className="relative mb-8 overflow-hidden rounded-2xl border border-[#2D6A4F]/30 bg-gradient-to-br from-white/90 via-[#F7F5F0]/90 to-emerald-50/50 p-6 shadow-xl backdrop-blur-md text-left animate-fadeIn">
+    <div className="relative mb-8 overflow-hidden rounded-2xl border border-purple-500/25 bg-gradient-to-br from-white/95 via-[#F7F5F0]/95 to-purple-50/50 p-6 shadow-xl backdrop-blur-md text-left animate-fadeIn">
       {/* Ambient background glow */}
-      <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-emerald-200/30 blur-3xl" />
-      <div className="pointer-events-none absolute -left-20 -bottom-20 h-56 w-56 rounded-full bg-[#2D6A4F]/10 blur-3xl" />
+      <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-purple-200/30 blur-3xl" />
+      <div className="pointer-events-none absolute -left-20 -bottom-20 h-56 w-56 rounded-full bg-blue-200/20 blur-3xl" />
 
       {/* Top Header bar */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-b border-[#1A1A18]/10 pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1A1A18] text-white shadow-md">
-            <span className="text-xl">🤖</span>
-          </div>
+          <GrokBotMascot size={42} interactive={false} />
           <div>
             <div className="flex items-center gap-2">
               <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
                 Grok Bot Intelligence
               </h3>
-              <span className="rounded-full bg-[#2D6A4F]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#2D6A4F]">
+              <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-[11px] font-bold text-purple-700">
                 {modelUsed}
               </span>
             </div>
