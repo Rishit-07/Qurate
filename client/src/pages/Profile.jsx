@@ -1,4 +1,22 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
+import {
+  Camera,
+  User,
+  Mail,
+  ExternalLink,
+  GitMerge,
+  GitPullRequest,
+  Clock,
+  Code2,
+  ShieldCheck,
+  Check,
+  LogOut,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Layers,
+} from 'lucide-react'
 
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
@@ -721,114 +739,324 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
 
       <section className="mx-auto w-full max-w-3xl border-x border-[#1A1A18]/10 px-6 py-10 sm:px-8">
 
-        <div className="mb-8 flex flex-col items-start gap-6 sm:flex-row sm:items-center">
-          <div className="relative group flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#2D6A4F]/20 bg-[#2D6A4F]/10 text-3xl font-bold text-[#2D6A4F] [font-family:Georgia,serif]">
-            {avatar ? (
-              <img
-                src={avatar.startsWith('http') ? avatar : `${API_BASE_URL}${avatar}`}
-                alt={username}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              initials
-            )}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingAvatar}
-              className="absolute inset-0 flex items-center justify-center bg-black/50 text-[10px] font-bold text-white opacity-0 transition group-hover:opacity-100"
-            >
-              {uploadingAvatar ? '...' : 'Upload'}
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarUpload}
-            />
-          </div>
+        {/* Rebuilt Identity Card (21st.dev Modern Profile Architecture) */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="relative mb-8 overflow-hidden rounded-2xl border border-[#1A1A18]/10 bg-white/75 p-6 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.03)]"
+        >
+          {/* Subtle ambient mesh glow */}
+          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#2D6A4F]/10 blur-3xl" />
 
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="[font-family:Georgia,serif] text-3xl font-bold tracking-tight text-[#1A1A18]">{username || 'Your profile'}</h1>
-              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
-                role === 'admin'
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                  : 'bg-[#2D6A4F]/10 text-[#2D6A4F] border border-[#2D6A4F]/20'
-              }`}>
-                {role === 'admin' ? '🛡️ Admin' : '💻 Contributor'}
-              </span>
-            </div>
-            <p className="mt-1 text-sm font-medium text-[#1A1A18]/55">{initialUser?.email}</p>
-            {githubUsername && (
-              <a href={`https://github.com/${githubUsername}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#2D6A4F] underline underline-offset-4 transition hover:text-[#24583F]">@{githubUsername} ↗</a>
-            )}
-          </div>
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            {/* Left: Avatar + Details */}
+            <div className="flex items-center gap-5">
+              {/* Avatar with dynamic ring & hover lens */}
+              <div className="relative group shrink-0">
+                <div className="relative h-20 w-20 sm:h-22 sm:w-22 overflow-hidden rounded-2xl border-2 border-white shadow-md ring-2 ring-[#2D6A4F]/20 transition-all duration-300 group-hover:ring-[#2D6A4F]/60">
+                  {avatar ? (
+                    <img
+                      src={avatar.startsWith('http') ? avatar : `${API_BASE_URL}${avatar}`}
+                      alt={username}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[#2D6A4F]/10 [font-family:Georgia,serif] text-2xl sm:text-3xl font-bold text-[#2D6A4F]">
+                      {initials}
+                    </div>
+                  )}
 
-          <div className="flex gap-3">
-            {statItems.map(s => (
-              <div key={s.label} className="rounded-lg border border-[#1A1A18]/10 bg-white/55 px-4 py-3 text-center">
-                <p className={`[font-family:Georgia,serif] text-2xl font-bold ${s.colour}`}>{s.value}</p>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/45">{s.label}</p>
+                  {/* Hover lens overlay with smooth motion */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-white opacity-0 backdrop-blur-[2px] transition-all duration-200 group-hover:opacity-100"
+                  >
+                    {uploadingAvatar ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-white" />
+                    ) : (
+                      <>
+                        <Camera className="h-5 w-5 text-white/90" />
+                        <span className="text-[10px] font-semibold tracking-wide">Edit</span>
+                      </>
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
+                  />
+                </div>
+                {/* Active status pip */}
+                <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-[#1A1A18]/10">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#2D6A4F]" />
+                </span>
               </div>
-            ))}
-          </div>
-        </div>
 
-        <div className="rounded-lg border border-[#1A1A18]/10 bg-white/55 px-6 py-6 shadow-sm">
-          <h2 className="mb-5 [font-family:Georgia,serif] text-xl font-bold text-[#1A1A18]">Account settings</h2>
+              {/* Identity Details */}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="[font-family:Georgia,serif] text-2xl sm:text-3xl font-bold tracking-tight text-[#1A1A18] truncate">
+                    {username || 'Your profile'}
+                  </h1>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    role === 'admin'
+                      ? 'bg-amber-100/80 text-amber-900 border border-amber-300/60 shadow-sm'
+                      : 'bg-[#2D6A4F]/10 text-[#2D6A4F] border border-[#2D6A4F]/20'
+                  }`}>
+                    {role === 'admin' ? (
+                      <>
+                        <ShieldCheck className="h-3 w-3" />
+                        Admin
+                      </>
+                    ) : (
+                      <>
+                        <Code2 className="h-3 w-3" />
+                        Contributor
+                      </>
+                    )}
+                  </span>
+                </div>
 
-          <form onSubmit={handleSave} className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-left">
-                <span className="text-sm font-medium text-[#1A1A18]/70">Display name</span>
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="Your name" />
-              </label>
-
-              <label className="block text-left">
-                <span className="text-sm font-medium text-[#1A1A18]/70">GitHub username</span>
-                <input type="text" value={githubUsername} onChange={e => setGithubUsername(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition placeholder:text-[#1A1A18]/35 focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20" placeholder="e.g. torvalds" />
-              </label>
+                <div className="mt-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3 text-xs sm:text-sm text-[#1A1A18]/60">
+                  {initialUser?.email && (
+                    <span className="inline-flex items-center gap-1.5 truncate">
+                      <Mail className="h-3.5 w-3.5 text-[#1A1A18]/40 shrink-0" />
+                      <span className="truncate">{initialUser.email}</span>
+                    </span>
+                  )}
+                  {githubUsername && (
+                    <a
+                      href={`https://github.com/${githubUsername}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group/gh inline-flex items-center gap-1 font-semibold text-[#2D6A4F] transition-colors hover:text-[#24583F]"
+                    >
+                      <span>@{githubUsername}</span>
+                      <ExternalLink className="h-3 w-3 transition-transform group-hover/gh:translate-x-0.5 group-hover/gh:-translate-y-0.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <label className="block text-left">
-              <span className="text-sm font-medium text-[#1A1A18]/70">Experience level</span>
-              <select value={level} onChange={e => setLevel(e.target.value)} className="mt-2 h-11 w-full rounded-md border border-[#1A1A18]/20 bg-white/65 px-4 text-sm text-[#1A1A18] outline-none transition focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/20">
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </label>
+            {/* Right: Stat Bento Counters */}
+            <div className="grid grid-cols-3 gap-2.5 sm:flex sm:gap-3 shrink-0">
+              {statItems.map((s, idx) => (
+                <motion.div
+                  key={s.label}
+                  whileHover={{ y: -2, scale: 1.02 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex flex-col items-center justify-center rounded-xl border border-[#1A1A18]/10 bg-white/60 px-4 py-2.5 shadow-sm transition hover:border-[#2D6A4F]/30 hover:bg-white"
+                >
+                  <div className="flex items-center gap-1">
+                    {idx === 0 && <GitMerge className="h-3 w-3 text-[#2D6A4F]" />}
+                    {idx === 1 && <GitPullRequest className="h-3 w-3 text-[#1A1A18]/70" />}
+                    {idx === 2 && <Clock className="h-3 w-3 text-[#1A1A18]/45" />}
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/50">
+                      {s.label}
+                    </span>
+                  </div>
+                  <p className={`mt-0.5 [font-family:Georgia,serif] text-2xl font-bold ${s.colour}`}>
+                    {s.value}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
 
+        {/* Rebuilt Account Settings Card (21st.dev Animated Form) */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+          className="rounded-2xl border border-[#1A1A18]/10 bg-white/75 p-6 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.03)]"
+        >
+          <div className="mb-6 flex flex-col gap-1 border-b border-[#1A1A18]/8 pb-4">
+            <h2 className="[font-family:Georgia,serif] text-xl font-bold tracking-tight text-[#1A1A18]">
+              Account settings
+            </h2>
+            <p className="text-xs text-[#1A1A18]/55">
+              Manage your public identity, experience level, and preferred technologies.
+            </p>
+          </div>
+
+          <form onSubmit={handleSave} className="space-y-6">
+            {/* Two-column Input Fields */}
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
+                  Display name
+                </label>
+                <div className="relative flex items-center">
+                  <User className="pointer-events-none absolute left-3.5 h-4 w-4 text-[#1A1A18]/40" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-[#1A1A18]/15 bg-white/80 pl-10 pr-4 text-sm text-[#1A1A18] shadow-sm outline-none transition placeholder:text-[#1A1A18]/30 focus:border-[#2D6A4F] focus:bg-white focus:ring-4 focus:ring-[#2D6A4F]/10"
+                    placeholder="Your name"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
+                  GitHub username
+                </label>
+                <div className="relative flex items-center">
+                  <span className="pointer-events-none absolute left-3.5 text-[#1A1A18]/40">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                    </svg>
+                  </span>
+                  <input
+                    type="text"
+                    value={githubUsername}
+                    onChange={e => setGithubUsername(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-[#1A1A18]/15 bg-white/80 pl-10 pr-4 text-sm text-[#1A1A18] shadow-sm outline-none transition placeholder:text-[#1A1A18]/30 focus:border-[#2D6A4F] focus:bg-white focus:ring-4 focus:ring-[#2D6A4F]/10"
+                    placeholder="e.g. torvalds"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modern 21st.dev Segmented Slider for Experience Level */}
             <div>
-              <p className="mb-2 text-sm font-medium text-[#1A1A18]/70">Your stack — click to toggle</p>
-              <div className="flex flex-wrap gap-2">
-                {STACK_OPTIONS.map(tech => {
-                  const active = stack.includes(tech.toLowerCase())
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
+                Experience level
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-[#1A1A18]/5 p-1">
+                {['beginner', 'intermediate', 'advanced'].map((lvl) => {
+                  const isSelected = level === lvl
                   return (
-                    <button key={tech} type="button" onClick={() => toggleStack(tech)} className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${active ? 'border-[#2D6A4F] bg-[#2D6A4F]/10 text-[#2D6A4F]' : 'border-[#1A1A18]/15 bg-white/45 text-[#1A1A18]/65 hover:border-[#2D6A4F] hover:text-[#2D6A4F]'}`}>
-                      {tech}
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setLevel(lvl)}
+                      className={`relative z-10 flex h-10 items-center justify-center rounded-lg text-xs font-bold capitalize transition-colors ${
+                        isSelected ? 'text-[#2D6A4F]' : 'text-[#1A1A18]/65 hover:text-[#1A1A18]'
+                      }`}
+                    >
+                      {isSelected && (
+                        <motion.div
+                          layoutId="active-level-indicator"
+                          className="absolute inset-0 rounded-lg bg-white shadow-sm ring-1 ring-[#1A1A18]/5"
+                          transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                        />
+                      )}
+                      <span className="relative z-20 flex items-center gap-1.5">
+                        {lvl}
+                      </span>
                     </button>
                   )
                 })}
               </div>
             </div>
 
-            
+            {/* Tech Stack Interactive Filter Chips with Counter */}
+            <div>
+              <div className="mb-2.5 flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
+                  Tech stack
+                </label>
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#2D6A4F]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#2D6A4F]">
+                  <Layers className="h-3 w-3" />
+                  {stack.length} selected
+                </span>
+              </div>
 
-            {saveMsg.text && (
-              <p className={`rounded-md border px-4 py-3 text-sm font-medium ${saveMsg.type === 'success' ? 'border-[#2D6A4F]/25 bg-[#2D6A4F]/10 text-[#2D6A4F]' : 'border-red-700/20 bg-red-700/10 text-red-800'}`}>
-                {saveMsg.text}
-              </p>
-            )}
+              <div className="flex flex-wrap gap-2">
+                {STACK_OPTIONS.map(tech => {
+                  const active = stack.includes(tech.toLowerCase())
+                  return (
+                    <motion.button
+                      key={tech}
+                      type="button"
+                      whileTap={{ scale: 0.94 }}
+                      onClick={() => toggleStack(tech)}
+                      className={`group flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all duration-200 ${
+                        active
+                          ? 'border-[#2D6A4F] bg-[#2D6A4F]/12 text-[#2D6A4F] shadow-sm'
+                          : 'border-[#1A1A18]/12 bg-white/70 text-[#1A1A18]/65 hover:border-[#2D6A4F]/40 hover:bg-white hover:text-[#1A1A18]'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#2D6A4F] text-white"
+                        >
+                          <Check className="h-2.5 w-2.5 stroke-[3]" />
+                        </motion.span>
+                      )}
+                      <span>{tech}</span>
+                    </motion.button>
+                  )
+                })}
+              </div>
+            </div>
 
-            <div className="flex gap-3 pt-6">
-              <button type="submit" disabled={saving} className="h-11 flex-1 rounded-md bg-[#2D6A4F] px-5 text-sm font-bold text-[#F7F5F0] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Saving…' : 'Save changes'}</button>
-              <button type="button" onClick={onSignOut} className="h-11 rounded-md border border-[#1A1A18]/15 px-5 text-sm font-semibold text-[#1A1A18]/65 transition hover:border-red-700/30 hover:text-red-800">Sign out</button>
+            {/* Feedback Toast Notification */}
+            <AnimatePresence>
+              {saveMsg.text && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 text-xs font-semibold shadow-sm ${
+                    saveMsg.type === 'success'
+                      ? 'border-[#2D6A4F]/25 bg-[#2D6A4F]/10 text-[#2D6A4F]'
+                      : 'border-red-700/20 bg-red-700/10 text-red-800'
+                  }`}
+                >
+                  {saveMsg.type === 'success' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2D6A4F]" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-800" />
+                  )}
+                  <span>{saveMsg.text}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              <motion.button
+                type="submit"
+                disabled={saving}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#2D6A4F] px-6 text-sm font-bold text-[#F7F5F0] shadow-md shadow-[#2D6A4F]/20 transition-all hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-[#F7F5F0]" />
+                    <span>Saving changes…</span>
+                  </>
+                ) : (
+                  <span>Save changes</span>
+                )}
+              </motion.button>
+
+              <motion.button
+                type="button"
+                onClick={onSignOut}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                className="flex h-11 items-center justify-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white/70 px-5 text-sm font-semibold text-[#1A1A18]/65 shadow-sm transition hover:border-red-600/30 hover:bg-red-50/50 hover:text-red-700"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Sign out</span>
+              </motion.button>
             </div>
           </form>
-        </div>
+        </motion.div>
 
         <div className="mt-6 rounded-lg border border-[#1A1A18]/10 bg-white/55 px-6 py-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
