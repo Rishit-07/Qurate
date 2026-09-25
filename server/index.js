@@ -30,16 +30,20 @@ app.use(cors({
     origin: function (origin, callback) {
         if (!origin) return callback(null, true);
 
-        const allowed = [
-            "http://localhost:5173",
-            "http://localhost:3000",
-        ];
-        if (process.env.FRONTEND_URL) allowed.push(process.env.FRONTEND_URL);
+        // Allow any localhost and 127.0.0.1 port (e.g. 5173, 5174, 3000, etc.)
+        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            return callback(null, true);
+        }
 
-        if (origin.endsWith(".vercel.app")) return callback(null, true);
+        if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
+            return callback(null, true);
+        }
 
-        if (allowed.includes(origin)) return callback(null, true);
-        return callback(new Error("CORS origin not allowed"), false);
+        if (origin.endsWith(".vercel.app")) {
+            return callback(null, true);
+        }
+
+        return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],

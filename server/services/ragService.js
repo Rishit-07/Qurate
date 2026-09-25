@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Issue from "../models/issue.js";
+import { searchGithubIssues } from "./githubServices.js";
 
 // Cosine similarity between two numerical vectors
 export const cosineSimilarity = (vecA, vecB) => {
@@ -72,34 +73,85 @@ export const generateEmbedding = async (text) => {
  * Retrieves the top K semantically most relevant issues from MongoDB
  * matching the user's natural language query or developer profile embeddings.
  */
-export const retrieveSemanticIssues = async ({ query, user, topK = 6 }) => {
-    const queryContext = `Developer Skills: ${(user?.stack || []).join(", ")}. Experience: ${user?.experienceLevel || "beginner"}. Query: ${query || "good first issue"}`;
+export const retrieveSemanticIssues = async ({ query, user, topK = 10 }) => {
+    // 1. If a query is provided, ensure fresh GitHub candidates are synced into DB
+    if (query && query.trim()) {
+        try {
+            const liveIssues = await searchGithubIssues(query.trim());
+            for (const iss of liveIssues) {
+                const { stacks, labels, ...issueFields } = iss;
+                await Issue.findOneAndUpdate(
+                    { github_id: iss.github_id },
+                    {
+                        $set: {
+                            ...issueFields,
+                            synced_at: new Date(),
+                        },
+                        $addToSet: {
+                            stacks: { $each: stacks || [] },
+                            labels: { $each: labels || [] },
+                        },
+                    },
+                    { upsert: true, new: true }
+                );
+            }
+        } catch (fetchErr) {
+            console.warn("RAG live GitHub fetch skipped:", fetchErr.message);
+        }
+    }
+
+    const queryContext = `Developer Skills: ${(user?.skills || user?.stack || []).join(", ")}. Experience: ${user?.experienceLevel || "beginner"}. Query: ${query || "good first issue"}`;
     
-    // 1. Generate query embedding
+    // 2. Generate query embedding
     const queryVector = await generateEmbedding(queryContext);
 
-    // 2. Fetch issue candidate pool from MongoDB
-    const issues = await Issue.find({}).limit(50).lean();
+    // 3. Fetch issue candidate pool from MongoDB with keyword relevance + recent pool
+    let candidatePool = [];
+    if (query && query.trim()) {
+        const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, 'i');
+        const [keywordMatches, recentPool] = await Promise.all([
+            Issue.find({
+                $or: [
+                    { title: regex },
+                    { body: regex },
+                    { stacks: regex },
+                    { labels: regex },
+                    { complexity: regex },
+                ]
+            }).limit(40).lean(),
+            Issue.find({}).sort({ synced_at: -1, _id: -1 }).limit(40).lean(),
+        ]);
 
-    if (issues.length === 0) {
+        const poolMap = new Map();
+        [...keywordMatches, ...recentPool].forEach(item => {
+            const id = (item.github_id || item._id).toString();
+            if (!poolMap.has(id)) poolMap.set(id, item);
+        });
+        candidatePool = Array.from(poolMap.values());
+    } else {
+        candidatePool = await Issue.find({}).sort({ synced_at: -1, _id: -1 }).limit(60).lean();
+    }
+
+    if (candidatePool.length === 0) {
         return [];
     }
 
-    // 3. Compute vector similarities across issue pool
+    // 4. Compute vector similarities across issue pool using Cosine Similarity
     const scoredIssues = await Promise.all(
-        issues.map(async (issue) => {
-            const issueContext = `${issue.title} ${issue.complexity} ${(issue.labels || []).join(" ")} ${(issue.stacks || []).join(" ")} ${(issue.body || "").slice(0, 200)}`;
+        candidatePool.map(async (issue) => {
+            const issueContext = `${issue.title} ${issue.complexity} ${(issue.labels || []).join(" ")} ${(issue.stacks || []).join(" ")} ${(issue.body || "").slice(0, 250)}`;
             const issueVector = await generateEmbedding(issueContext);
             const similarity = cosineSimilarity(queryVector, issueVector);
             return {
                 ...issue,
                 vectorSimilarity: Number(similarity.toFixed(4)),
-                retrievalScore: Math.round(similarity * 100),
+                retrievalScore: Math.round(Math.max(similarity, 0.45) * 10), // 1-10 scale
             };
         })
     );
 
-    // 4. Rank and return topK most semantically aligned issues
+    // 5. Rank and return topK most semantically aligned issues
     return scoredIssues
         .sort((a, b) => b.vectorSimilarity - a.vectorSimilarity)
         .slice(0, topK);

@@ -117,29 +117,42 @@ const searchProfiles = [
     },
 ];
 
-export const fetchGithubIssues = async () => {
+const getGithubHeaders = () => {
     const githubToken = process.env.GITHUB_TOKEN?.trim();
-    const pageSize = 10;
     const headers = {
         Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Qurate-Platform/1.0 (Windows NT 10.0; Win64; x64)",
     };
 
     if (githubToken) {
-        headers.Authorization = `token ${githubToken}`;
+        headers.Authorization = githubToken.startsWith("gh") ? `Bearer ${githubToken}` : `token ${githubToken}`;
     }
+
+    return headers;
+};
+
+export const fetchGithubIssues = async () => {
+    const pageSize = 10;
+    const headers = getGithubHeaders();
 
     const issueGroups = await Promise.all(
         searchProfiles.map(async (profile) => {
-            const response = await axios.get("https://api.github.com/search/issues", {
-                headers,
-                params: {
-                    q: profile.query,
-                    sort: "updated",
-                    per_page: pageSize,
-                },
-            });
+            try {
+                const response = await axios.get("https://api.github.com/search/issues", {
+                    headers,
+                    params: {
+                        q: profile.query,
+                        sort: "updated",
+                        per_page: pageSize,
+                    },
+                    timeout: 8000,
+                });
 
-            return response.data.items.map((issue) => mapGithubIssue(issue, profile));
+                return response.data.items.map((issue) => mapGithubIssue(issue, profile));
+            } catch (err) {
+                console.warn(`[GitHub Profile Sync] Warning on "${profile.stack}":`, err.message);
+                return [];
+            }
         })
     );
 
@@ -147,14 +160,7 @@ export const fetchGithubIssues = async () => {
 };
 
 export const searchGithubIssues = async (query) => {
-    const githubToken = process.env.GITHUB_TOKEN?.trim();
-    const headers = {
-        Accept: "application/vnd.github.v3+json",
-    };
-
-    if (githubToken) {
-        headers.Authorization = `token ${githubToken}`;
-    }
+    const headers = getGithubHeaders();
 
     // Sanitize the incoming query to avoid GitHub search parsing issues
     const safeQuery = String(query || '').replace(/#/g, '').replace(/"/g, '').trim();
@@ -179,24 +185,32 @@ export const searchGithubIssues = async (query) => {
         githubQuery = `"${safeQuery}" state:open`;
     }
 
-    const response = await axios.get("https://api.github.com/search/issues", {
-        headers,
-        params: {
-            q: githubQuery,
-            sort: "updated",
-            per_page: 10,
-        },
-    });
+    try {
+        const response = await axios.get("https://api.github.com/search/issues", {
+            headers,
+            params: {
+                q: githubQuery,
+                sort: "updated",
+                per_page: 10,
+            },
+            timeout: 7000,
+        });
 
-    const mappedIssues = response.data.items.map((issue) =>
-        mapGithubIssue(issue, buildSearchProfile(query, issue.labels))
-    );
+        const mappedIssues = (response.data.items || []).map((issue) =>
+            mapGithubIssue(issue, buildSearchProfile(query, issue.labels))
+        );
 
-    if (languageProfile) {
-        return mappedIssues.filter((issue) => matchesLanguageProfile(issue, languageProfile.profile));
+        if (languageProfile) {
+            return mappedIssues.filter((issue) => matchesLanguageProfile(issue, languageProfile.profile));
+        }
+
+        return mappedIssues;
+    } catch (err) {
+        const status = err.response?.status;
+        console.warn(`[GitHub Search API] HTTP ${status || 'ERR'} (${err.message}) - gracefully falling back to database`);
+        // Return empty array on rate-limit (403, 429) or network failure so callers can fall back to MongoDB smoothly
+        return [];
     }
-
-    return mappedIssues;
 };
 
 const mapGithubIssue = (issue, profile) => {

@@ -3,8 +3,11 @@ import GrokBotMascot from './GrokBotMascot'
 
 /**
  * GrokCursorSearchCard Component
- * Displays the prominent colorful cloud mascot with white pill eyes tracking the cursor,
- * dynamic spotlight glow, magnetic border trail, and search mode switcher.
+ * Harmonized with Qurate's core theme:
+ * - Signature palette: Forest Emerald (#2D6A4F), Warm Charcoal (#1A1A18), Cream (#F7F5F0), and Mint (#52B788).
+ * - Unified single search (no mode toggles).
+ * - Animated Grok cloud mascot with real-time cursor tracking.
+ * - Dynamic emerald spotlight and magnetic glowing border.
  */
 export default function GrokCursorSearchCard({
   query,
@@ -12,8 +15,6 @@ export default function GrokCursorSearchCard({
   onSearch,
   loading,
   placeholder,
-  isGrokMode,
-  setIsGrokMode,
 }) {
   const cardRef = useRef(null)
   const [globalCursor, setGlobalCursor] = useState({ x: 0, y: 0 })
@@ -64,23 +65,23 @@ export default function GrokCursorSearchCard({
         transform: `perspective(1000px) rotateX(${cardTilt.rotateX}deg) rotateY(${cardTilt.rotateY}deg)`,
         transition: 'transform 0.15s ease-out',
       }}
-      className="relative mx-auto mt-8 max-w-4xl rounded-3xl border border-[#1A1A18]/15 bg-white/80 p-6 sm:p-8 shadow-xl backdrop-blur-md overflow-hidden text-left transition-shadow duration-300 hover:shadow-2xl"
+      className="relative mx-auto mt-8 max-w-4xl rounded-3xl border border-[#1A1A18]/15 bg-white/85 p-6 sm:p-8 shadow-xl backdrop-blur-md overflow-hidden text-left transition-shadow duration-300 hover:shadow-2xl"
     >
-      {/* Dynamic Cursor Spotlight Background Glow */}
+      {/* Dynamic Cursor Spotlight Background Glow (Emerald Brand Theme) */}
       <div
         className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-300"
         style={{
           opacity: cardMouse.isOver || isFocused ? 1 : 0,
-          background: `radial-gradient(450px circle at ${cardMouse.x}px ${cardMouse.y}px, rgba(110, 61, 244, 0.12), transparent 75%)`,
+          background: `radial-gradient(450px circle at ${cardMouse.x}px ${cardMouse.y}px, rgba(45, 106, 79, 0.14), transparent 75%)`,
         }}
       />
 
-      {/* Magnetic Glowing Border Trail Overlay */}
+      {/* Magnetic Glowing Border Trail Overlay (Emerald & Mint Brand Theme) */}
       <div
         className="pointer-events-none absolute inset-0 z-10 rounded-3xl transition-opacity duration-200"
         style={{
           opacity: cardMouse.isOver || isFocused ? 1 : 0,
-          background: `radial-gradient(280px circle at ${cardMouse.x}px ${cardMouse.y}px, rgba(123, 44, 191, 0.5), transparent 70%)`,
+          background: `radial-gradient(280px circle at ${cardMouse.x}px ${cardMouse.y}px, rgba(82, 183, 136, 0.55), transparent 70%)`,
           mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
           WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
           maskComposite: 'exclude',
@@ -89,43 +90,25 @@ export default function GrokCursorSearchCard({
         }}
       />
 
-      {/* Card Header: Mode Selector & Hamburger Action (Matching user's reference) */}
+      {/* Card Header: Unified Status Badge & Hamburger Action */}
       <div className="relative z-20 flex items-center justify-between border-b border-[#1A1A18]/10 pb-4">
-        {/* Mode Selector */}
-        <div className="flex items-center gap-1.5 rounded-full border border-[#1A1A18]/15 bg-white/90 p-1 shadow-xs">
-          <button
-            type="button"
-            onClick={() => setIsGrokMode(false)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition ${
-              !isGrokMode
-                ? 'bg-[#1A1A18] text-[#F7F5F0] shadow-sm'
-                : 'text-[#1A1A18]/60 hover:text-[#1A1A18]'
-            }`}
-          >
-            <span>⚡</span>
-            <span>Standard Search</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsGrokMode(true)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition ${
-              isGrokMode
-                ? 'bg-gradient-to-r from-purple-700 to-indigo-600 text-white shadow-sm'
-                : 'text-[#1A1A18]/60 hover:text-purple-700'
-            }`}
-          >
-            <span className="inline-block h-2 w-2 rounded-full bg-pink-300 animate-pulse" />
-            <span>Grok Bot Mode</span>
-          </button>
+        {/* Unified Search Badge in Brand Emerald */}
+        <div className="flex items-center gap-2 rounded-full border border-[#2D6A4F]/20 bg-[#2D6A4F]/7 px-4 py-1.5 shadow-xs">
+          <span className="inline-block h-2 w-2 rounded-full bg-[#2D6A4F] animate-pulse" />
+          <span className="text-xs font-bold text-[#1A1A18] tracking-wide">
+            🧠 RAG Semantic Vector Search
+          </span>
+          <span className="hidden sm:inline-block rounded-full bg-[#2D6A4F]/15 px-2 py-0.5 text-[10px] font-bold text-[#2D6A4F]">
+            AI Embeddings + GitHub
+          </span>
         </div>
 
-        {/* Clean Menu Hamburger Icon from reference image */}
+        {/* Clean Menu Hamburger Icon */}
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#1A1A18]/10 bg-white/60 text-[#1A1A18]/70 shadow-xs transition hover:bg-white hover:text-[#1A1A18]"
-            title="Options"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#1A1A18]/10 bg-white/70 text-[#1A1A18]/70 shadow-xs transition hover:bg-white hover:text-[#1A1A18]"
+            title="Search options"
             aria-label="Menu"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -137,19 +120,17 @@ export default function GrokCursorSearchCard({
         </div>
       </div>
 
-      {/* Prominent Center Stage: Floating Colorful Cloud Bot with White Pill Eyes */}
+      {/* Prominent Center Stage: Floating Animated Grok Bot Mascot */}
       <div className="relative z-20 flex flex-col items-center justify-center pt-5 pb-4 text-center">
         <div className="transition-transform duration-300 hover:scale-105">
           <GrokBotMascot
             cursorPos={globalCursor}
             state={botState}
-            size={90}
+            size={96}
           />
         </div>
-        <p className="mt-3 text-xs font-semibold tracking-wide text-[#1A1A18]/65">
-          {isGrokMode
-            ? 'Grok Bot is watching your cursor • Click me or ask anything to discover issues'
-            : 'Interactive Grok Bot • Move your cursor to watch the eyes follow'}
+        <p className="mt-3.5 text-xs font-semibold tracking-wide text-[#1A1A18]/65">
+          Grok Bot is watching your cursor • Click to interact or type anything to search & analyze
         </p>
       </div>
 
@@ -158,7 +139,7 @@ export default function GrokCursorSearchCard({
         <label className="block">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#1A1A18]/50">
-              {isGrokMode ? 'Ask Grok or describe what you want to build' : 'Search GitHub Open Source'}
+              Find issues & ask Grok
             </span>
             <span className="text-[11px] font-medium text-[#1A1A18]/45">
               Press Enter ↵ to search
@@ -180,20 +161,15 @@ export default function GrokCursorSearchCard({
               rows={3}
               className="min-h-24 flex-1 resize-none bg-transparent text-xl sm:text-2xl font-semibold leading-relaxed text-[#1A1A18] outline-none placeholder:text-[#1A1A18]/35 focus:ring-0"
               placeholder={
-                isGrokMode
-                  ? "e.g. 'I want to fix React accessibility issues', or 'Find cool beginner TypeScript projects'..."
-                  : placeholder
+                placeholder || "e.g. 'React accessibility issues', 'Beginner TypeScript projects', or ask Grok directly..."
               }
             />
 
+            {/* Brand-Themed Submit Button (Forest Emerald #2D6A4F) */}
             <button
               type="submit"
               disabled={loading || !query.trim()}
-              className={`mt-1 flex h-13 w-13 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-[#F7F5F0] shadow-md transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 ${
-                isGrokMode
-                  ? 'bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-800 hover:to-indigo-700'
-                  : 'bg-[#1A1A18] hover:bg-[#2D6A4F]'
-              }`}
+              className="mt-1 flex h-13 w-13 shrink-0 items-center justify-center rounded-2xl bg-[#2D6A4F] text-lg font-bold text-[#F7F5F0] shadow-md transition hover:-translate-y-0.5 hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Submit search"
             >
               {loading ? (
@@ -212,14 +188,12 @@ export default function GrokCursorSearchCard({
       {/* Footer Info */}
       <div className="relative z-20 mt-3 flex items-center justify-between text-xs text-[#1A1A18]/45">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
-          Cursor tracking & spotlight active
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#2D6A4F]" />
+          Cursor spotlight active
         </span>
-        {isGrokMode && (
-          <span className="font-semibold text-purple-700">
-            ✨ Gemini 3.6 Flash Intelligence
-          </span>
-        )}
+        <span className="font-semibold text-[#2D6A4F]">
+          ⚡ GitHub Search + Grok Gemini 3.6 Flash
+        </span>
       </div>
     </div>
   )

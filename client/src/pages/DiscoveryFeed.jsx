@@ -16,8 +16,6 @@ function DiscoveryFeed({
   const [currentPage, setCurrentPage] = useState(1)
   const [maxFetchedPage, setMaxFetchedPage] = useState(1)
   const [selectedAiIssue, setSelectedAiIssue] = useState(null)
-  const [ragQuery, setRagQuery] = useState('')
-  const [ragLoading, setRagLoading] = useState(false)
   const [feedStatus, setFeedStatus] = useState({
     loading: true,
     error: '',
@@ -290,50 +288,6 @@ function DiscoveryFeed({
               )
             })}
           </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              if (!ragQuery.trim()) return
-              try {
-                setRagLoading(true)
-                const res = await fetch(`${API_BASE_URL}/api/ai/rag-search`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${localStorage.getItem('token') || localStorage.getItem('qurateToken') || ''}`,
-                  },
-                  body: JSON.stringify({ query: ragQuery }),
-                })
-                const data = await res.json()
-                if (data.issues) {
-                  setIssues(data.issues)
-                  setFeedStatus((prev) => ({ ...prev, total: data.issues.length }))
-                  setActiveFilter('All')
-                }
-              } catch (err) {
-                console.error(err)
-              } finally {
-                setRagLoading(false)
-              }
-            }}
-            className="flex items-center gap-2"
-          >
-            <input
-              type="text"
-              value={ragQuery}
-              onChange={(e) => setRagQuery(e.target.value)}
-              placeholder="🧠 RAG Semantic Vector Search..."
-              className="h-8 w-64 rounded-full border border-[#2D6A4F]/30 bg-white px-3 text-xs text-[#1A1A18] outline-none focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F]"
-            />
-            <button
-              type="submit"
-              disabled={ragLoading}
-              className="h-8 rounded-full bg-[#2D6A4F] px-3 text-xs font-bold text-white transition hover:bg-[#24583F]"
-            >
-              {ragLoading ? '...' : 'Search'}
-            </button>
-          </form>
         </div>
 
         {feedStatus.error && (

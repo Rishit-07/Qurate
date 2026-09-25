@@ -22,7 +22,6 @@ function DiscoverPage({
   const [typedPrompt, setTypedPrompt] = useState('')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
-  const [isGrokMode, setIsGrokMode] = useState(true)
   const [grokInsight, setGrokInsight] = useState(null)
   const [grokLoading, setGrokLoading] = useState(false)
   const [status, setStatus] = useState({
@@ -57,26 +56,55 @@ function DiscoverPage({
 
     setStatus({ loading: true, error: '', searched: true })
     setGrokInsight(null)
+    setGrokLoading(true)
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/issues/search?q=${encodeURIComponent(query.trim())}`,
-      )
-      const data = await response.json()
+      const token = localStorage.getItem('token') || localStorage.getItem('qurateToken') || ''
+      let foundIssues = []
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Could not search GitHub issues')
+      // 1. Execute RAG Semantic Vector Retrieval
+      try {
+        const ragRes = await fetch(`${API_BASE_URL}/api/ai/rag-search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ query: query.trim(), topK: 12 }),
+        })
+
+        if (ragRes.ok) {
+          const ragData = await ragRes.json()
+          if (ragData.issues && ragData.issues.length > 0) {
+            foundIssues = ragData.issues
+          }
+        }
+      } catch (ragErr) {
+        console.warn('RAG search fallback to standard query:', ragErr)
       }
 
-      const foundIssues = data.issues || []
+      // Fallback to standard search if RAG returned no matches
+      if (!foundIssues || foundIssues.length === 0) {
+        try {
+          const response = await fetch(
+            `${API_BASE_URL}/api/issues/search?q=${encodeURIComponent(query.trim())}`,
+          )
+          const data = await response.json()
+
+          if (response.ok && data.issues && data.issues.length > 0) {
+            foundIssues = data.issues
+          }
+        } catch (searchErr) {
+          console.warn('Standard search fallback error:', searchErr)
+        }
+      }
+
       setResults(foundIssues)
       setStatus({ loading: false, error: '', searched: true })
 
-      // If Grok Mode is enabled, fetch deep AI insights from Grok Bot
-      if (isGrokMode) {
-        setGrokLoading(true)
+      // 2. Synthesize Grok AI insights on semantically retrieved issues
+      if (foundIssues && foundIssues.length > 0) {
         try {
-          const token = localStorage.getItem('token') || localStorage.getItem('qurateToken') || ''
           const aiRes = await fetch(`${API_BASE_URL}/api/ai/grok-discover`, {
             method: 'POST',
             headers: {
@@ -97,15 +125,20 @@ function DiscoverPage({
         } finally {
           setGrokLoading(false)
         }
+      } else {
+        setGrokLoading(false)
       }
     } catch (error) {
+      const is403 = error?.message?.includes('403')
       setStatus({
         loading: false,
-        error:
-          error.message ||
-          'Could not reach GitHub search. Check that the backend is running.',
+        error: is403
+          ? 'GitHub API rate limit reached. Displaying local curated issues.'
+          : error.message ||
+            'Could not reach search engine. Check that the backend is running.',
         searched: true,
       })
+      setGrokLoading(false)
     }
   }
 
@@ -159,8 +192,6 @@ function DiscoverPage({
             onSearch={handleSearch}
             loading={status.loading || grokLoading}
             placeholder={typedPrompt}
-            isGrokMode={isGrokMode}
-            setIsGrokMode={setIsGrokMode}
           />
 
           <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -183,7 +214,7 @@ function DiscoverPage({
 
         <div className="mt-14 space-y-5 pb-12">
           {/* Grok Bot AI Insight Breakdown */}
-          {grokInsight && isGrokMode && (
+          {grokInsight && (
             <GrokInsightCard
               insight={grokInsight}
               query={query}
@@ -286,6 +317,11 @@ function DiscoverIssueCard({ issue, index, isBookmarked, onToggleBookmark }) {
         <span className="rounded-full bg-[#1A1A18]/5 px-3 py-1 text-xs font-semibold text-[#1A1A18]/60">
           {issue.complexity || 'beginner'}
         </span>
+        {issue.vectorSimilarity > 0 && (
+          <span className="rounded-full bg-[#2D6A4F]/15 px-2.5 py-1 text-[11px] font-bold text-[#2D6A4F]">
+            🧠 Semantic Match: {Math.round(issue.vectorSimilarity * 100)}%
+          </span>
+        )}
       </div>
 
       <div className="mt-6 grid grid-cols-[auto_1fr_auto] items-center gap-3 text-sm font-semibold text-[#1A1A18]/70">
@@ -303,6 +339,9 @@ function DiscoverIssueCard({ issue, index, isBookmarked, onToggleBookmark }) {
 }
 
 function getIssueScore(issue) {
+  if (typeof issue.retrievalScore === 'number' && issue.retrievalScore > 0) {
+    return Math.min(10, Math.max(1, issue.retrievalScore))
+  }
   const latestScore = issue.fitScores?.at?.(-1)?.score
   if (latestScore) return latestScore
 

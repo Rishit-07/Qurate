@@ -115,16 +115,15 @@ export const runContributionAgent = async ({ issue, user }) => {
         };
     }
 
+    const candidateModels = [
+        "gemini-2.5-flash",
+        process.env.GEMINI_MODEL || "gemini-3.6-flash",
+    ];
+
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({
-            model: GEMINI_MODEL,
-            tools: [{ functionDeclarations: toolDeclarations }],
-        });
-
-        const chat = model.startChat();
         const safeIssue = wrapUntrustedInput(JSON.stringify(issue), "issue_details");
-        const safeUser = wrapUntrustedInput(JSON.stringify(user), "user_profile");
+        const safeUser = wrapUntrustedInput(JSON.stringify(user || {}), "user_profile");
 
         const initialPrompt = `You are the Qurate Multi-Step Contribution Agent.
 Goal: Formulate a comprehensive, actionable PR Contribution Roadmap for this developer to solve this issue.
@@ -136,8 +135,30 @@ ${safeIssue}
 Developer Profile:
 ${safeUser}`;
 
-        let result = await chat.sendMessage(initialPrompt);
-        let resp = result.response;
+        let chat = null;
+        let result = null;
+        let resp = null;
+
+        for (const candidate of candidateModels) {
+            try {
+                const model = genAI.getGenerativeModel({
+                    model: candidate,
+                    tools: [{ functionDeclarations: toolDeclarations }],
+                });
+                chat = model.startChat();
+                result = await chat.sendMessage(initialPrompt);
+                resp = result.response;
+                break;
+            } catch (initErr) {
+                console.warn(`[AI Agent] Model ${candidate} unavailable (${initErr.message}). Testing failover...`);
+            }
+        }
+
+        if (!resp) {
+            console.warn("[AI Agent] Cloud model unavailable, utilizing verified fallback roadmap");
+            return buildFallbackRoadmap(issue, user, "Agent service utilized structured local roadmap.");
+        }
+
         const toolCallsMade = [];
         const executionTrace = [];
         let stepCount = 1;
@@ -161,16 +182,21 @@ ${safeUser}`;
                     result: toolResult,
                 });
 
-                // Send tool result back to model
-                result = await chat.sendMessage([
-                    {
-                        functionResponse: {
-                            name: call.name,
-                            response: toolResult,
+                try {
+                    // Send tool result back to model with required object wrapper
+                    result = await chat.sendMessage([
+                        {
+                            functionResponse: {
+                                name: call.name,
+                                response: { name: call.name, content: toolResult },
+                            },
                         },
-                    },
-                ]);
-                resp = result.response;
+                    ]);
+                    resp = result.response;
+                } catch (sendErr) {
+                    console.warn(`[AI Agent Tool Return] Warning:`, sendErr.message);
+                    break;
+                }
                 stepCount++;
             }
             funcCalls = typeof resp.functionCalls === "function" ? resp.functionCalls() : undefined;
