@@ -245,6 +245,12 @@ function DiscoveryFeed({
               Bookmarks
             </button>
             <button
+              onClick={() => onNavigate('contributed-works')}
+              className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]"
+            >
+              Works
+            </button>
+            <button
               onClick={() => onNavigate('profile')}
               className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]"
             >

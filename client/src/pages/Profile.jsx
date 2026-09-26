@@ -7,6 +7,8 @@ import {
   ExternalLink,
   GitMerge,
   GitPullRequest,
+  GitBranch,
+  Flame,
   Clock,
   Code2,
   ShieldCheck,
@@ -26,6 +28,8 @@ import {
   FileText,
   ArrowUpRight,
   Dna,
+  Copy,
+  Share2,
 } from 'lucide-react'
 import StackDnaRadarCard from '../components/StackDnaRadarCard'
 
@@ -469,24 +473,261 @@ function readLocalBookmarkContributions() {
     if (!raw) return []
 
     const bookmarks = JSON.parse(raw)
-    // Only include bookmarks that the user actually contributed to or marked in progress
-    return bookmarks
-      .filter((b) => b.bookmarkStatus === 'completed' || b.bookmarkStatus === 'in-progress' || b.contributedAt)
-      .map((issue) => ({
-        source: 'tracked',
-        issueId: String(issue._id || issue.github_id),
-        repoName: issue.repo?.name || '',
-        issueTitle: issue.title || '',
-        pullRequestUrl: issue.pullRequestUrl || issue.html_url || '',
-        status: issue.bookmarkStatus || 'in-progress',
-        date: issue.contributedAt || issue.bookmarkedAt || new Date().toISOString(),
-      }))
+    return bookmarks.map((issue) => ({
+      source: 'tracked',
+      issueId: String(issue._id || issue.github_id),
+      repoName: issue.repo?.name || '',
+      issueTitle: issue.title || '',
+      issueUrl: issue.html_url || '',
+      pullRequestUrl: issue.pullRequestUrl || '',
+      branchName: issue.branchName || '',
+      prNumber: issue.prNumber || null,
+      status: issue.bookmarkStatus || 'planned',
+      date: issue.contributedAt || issue.bookmarkedAt || issue.updatedAt || new Date().toISOString(),
+    }))
   } catch {
     return []
   }
 }
 
-function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRefreshKey, onUserUpdate }) {
+function ContributionWorkflowCard({
+  contributions = [],
+  onUpdateBookmarkStatus,
+  onSyncPullRequestStatus,
+  onNavigate,
+}) {
+  const [filter, setFilter] = useState('all')
+  const [syncingId, setSyncingId] = useState(null)
+  const [syncNotes, setSyncNotes] = useState({})
+
+  const STAGE_CONFIG = {
+    merged: { label: 'PR Merged', icon: GitMerge, badge: 'bg-[#2D6A4F]/10 text-[#2D6A4F] border-[#2D6A4F]/25' },
+    completed: { label: 'PR Merged', icon: GitMerge, badge: 'bg-[#2D6A4F]/10 text-[#2D6A4F] border-[#2D6A4F]/25' },
+    pr_created: { label: 'PR Generated', icon: GitPullRequest, badge: 'bg-purple-100 text-purple-800 border-purple-200' },
+    submitted: { label: 'PR Generated', icon: GitPullRequest, badge: 'bg-purple-100 text-purple-800 border-purple-200' },
+    in_progress: { label: 'Still Working', icon: Flame, badge: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+    branch_created: { label: 'Branch Created', icon: GitBranch, badge: 'bg-blue-100 text-blue-800 border-blue-200' },
+    planned: { label: 'Planned Backlog', icon: Clock, badge: 'bg-amber-100 text-amber-900 border-amber-200' },
+  }
+
+  const counts = {
+    all: contributions.length,
+    merged: contributions.filter(c => c.status === 'merged' || c.status === 'completed').length,
+    pr: contributions.filter(c => c.status === 'pr_created' || c.status === 'submitted').length,
+    working: contributions.filter(c => c.status === 'in_progress' || c.status === 'branch_created').length,
+    planned: contributions.filter(c => !c.status || c.status === 'planned').length,
+  }
+
+  const filtered = contributions.filter(c => {
+    const s = c.status || 'planned'
+    if (filter === 'merged') return s === 'merged' || s === 'completed'
+    if (filter === 'pr') return s === 'pr_created' || s === 'submitted'
+    if (filter === 'working') return s === 'in_progress' || s === 'branch_created'
+    if (filter === 'planned') return s === 'planned'
+    return true
+  })
+
+  async function handleSync(item) {
+    const id = item.issueId
+    setSyncingId(id)
+    const res = await onSyncPullRequestStatus?.(item, item.pullRequestUrl)
+    setSyncingId(null)
+    if (res?.success) {
+      setSyncNotes(prev => ({ ...prev, [id]: res.isMerged ? 'Verified Merged on GitHub!' : `PR is ${res.state}` }))
+    } else {
+      setSyncNotes(prev => ({ ...prev, [id]: res?.error || 'Could not verify PR' }))
+    }
+  }
+
+  return (
+    <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-5 shadow-sm backdrop-blur-xl space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2D6A4F]/10 text-[#2D6A4F]">
+            <GitPullRequest className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="[font-family:Georgia,serif] text-base sm:text-lg font-bold text-[#1A1A18]">
+              Contribution Pipeline & Work Tracker
+            </h3>
+            <p className="text-xs text-[#1A1A18]/50">
+              Track git branches, in-progress code, pull requests, and upstream merges
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onNavigate?.('bookmarks')}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-[#1A1A18]/10 bg-white px-3 py-1.5 text-xs font-semibold text-[#1A1A18]/70 shadow-2xs hover:border-[#2D6A4F] hover:text-[#2D6A4F] transition"
+        >
+          <span>Manage Roadmap</span>
+          <ChevronRight className="h-3 w-3" />
+        </button>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar border-b border-[#1A1A18]/8">
+        {[
+          { id: 'all', label: 'All Tracked', count: counts.all },
+          { id: 'merged', label: 'Merged', count: counts.merged },
+          { id: 'pr', label: 'In Review / PR', count: counts.pr },
+          { id: 'working', label: 'Still Working / Branches', count: counts.working },
+          { id: 'planned', label: 'Planned', count: counts.planned },
+        ].map(t => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setFilter(t.id)}
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition whitespace-nowrap ${
+              filter === t.id
+                ? 'bg-[#2D6A4F] text-white'
+                : 'text-[#1A1A18]/60 hover:bg-[#1A1A18]/5 hover:text-[#1A1A18]'
+            }`}
+          >
+            <span>{t.label}</span>
+            <span className={`rounded-full px-1.5 text-[10px] font-bold ${filter === t.id ? 'bg-white/20 text-white' : 'bg-[#1A1A18]/8 text-[#1A1A18]/50'}`}>
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Contributions List */}
+      <div className="space-y-3">
+        {filtered.map((item) => {
+          const cfg = STAGE_CONFIG[item.status] || STAGE_CONFIG.planned
+          const Icon = cfg.icon
+          const id = item.issueId
+
+          return (
+            <div
+              key={id}
+              className="rounded-2xl border border-[#1A1A18]/10 bg-white/70 p-3.5 sm:p-4 transition hover:bg-white hover:border-[#2D6A4F]/30 shadow-2xs"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-[#1A1A18]/5 px-2 py-0.5 font-mono text-[10px] font-bold text-[#1A1A18]/70">
+                      {item.repoName || 'open-source'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${cfg.badge}`}>
+                      <Icon className="h-3 w-3" />
+                      <span>{cfg.label}</span>
+                    </span>
+                  </div>
+
+                  <h4 className="text-sm font-bold text-[#1A1A18] line-clamp-1">
+                    {item.issueTitle || item.title || 'Contribution Issue'}
+                  </h4>
+
+                  {/* Branch & PR Link Details */}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-[#1A1A18]/65 pt-0.5">
+                    {item.branchName && (
+                      <span className="inline-flex items-center gap-1 font-mono text-[11px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                        <GitBranch className="h-3 w-3" />
+                        <span>branch: {item.branchName}</span>
+                      </span>
+                    )}
+
+                    {item.pullRequestUrl && (
+                      <a
+                        href={item.pullRequestUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold text-purple-700 hover:underline"
+                      >
+                        <GitPullRequest className="h-3 w-3" />
+                        <span>{item.prNumber ? `PR #${item.prNumber}` : 'View PR on GitHub'}</span>
+                        <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+
+                    {item.issueUrl && (
+                      <a
+                        href={item.issueUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[#1A1A18]/50 hover:text-[#2D6A4F] hover:underline"
+                      >
+                        <span>Issue link</span>
+                        <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status Switcher & Live Sync */}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {/* Status Dropdown */}
+                  <select
+                    value={item.status || 'planned'}
+                    onChange={(e) => onUpdateBookmarkStatus?.(item, e.target.value)}
+                    className="h-8 rounded-lg border border-[#1A1A18]/15 bg-white px-2.5 text-xs font-semibold text-[#1A1A18]/80 outline-none focus:border-[#2D6A4F]"
+                  >
+                    <option value="planned">Planned</option>
+                    <option value="branch_created">Branch Created</option>
+                    <option value="in_progress">Still Working</option>
+                    <option value="pr_created">PR Generated</option>
+                    <option value="merged">PR Merged</option>
+                  </select>
+
+                  {/* Sync PR Button if URL is available */}
+                  {item.pullRequestUrl && (
+                    <button
+                      type="button"
+                      onClick={() => handleSync(item)}
+                      disabled={syncingId === id}
+                      title="Sync live status from GitHub"
+                      className="inline-flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-bold text-purple-700 hover:bg-purple-100 disabled:opacity-50 transition"
+                    >
+                      {syncingId === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                      <span>Sync</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {syncNotes[id] && (
+                <div className="mt-2 text-[11px] font-semibold text-[#2D6A4F] flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span>{syncNotes[id]}</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {filtered.length === 0 && (
+          <div className="rounded-xl border border-dashed border-[#1A1A18]/15 bg-white/40 p-6 text-center">
+            <p className="text-xs font-semibold text-[#1A1A18]/60">
+              No contributions in this stage.
+            </p>
+            <button
+              type="button"
+              onClick={() => onNavigate?.('bookmarks')}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[#2D6A4F] hover:underline"
+            >
+              <span>Track issues in your roadmap</span>
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProfilePage({
+  user: initialUser,
+  onNavigate,
+  onSignOut,
+  contributionRefreshKey,
+  onUserUpdate,
+  bookmarks = [],
+  onUpdateBookmarkStatus,
+  onSyncPullRequestStatus,
+}) {
   const [username,        setUsername]        = useState(initialUser?.username        || '')
   const [githubUsername,  setGithubUsername]  = useState(initialUser?.githubUsername  || '')       
   const [stack,           setStack]           = useState(initialUser?.stack           || [])
@@ -510,6 +751,18 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
   const [dayDetail,       setDayDetail]       = useState(null)
   const [dayLoading,      setDayLoading]      = useState(false)
   const [activeTab,       setActiveTab]       = useState('overview')
+  const [showShareModal,  setShowShareModal]  = useState(false)
+  const [copiedShareLink, setCopiedShareLink] = useState(false)
+
+  const publicProfileUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/u/${encodeURIComponent(username || initialUser?.username || 'user')}`
+    : ''
+
+  function copyPublicLink() {
+    navigator.clipboard?.writeText(publicProfileUrl)
+    setCopiedShareLink(true)
+    setTimeout(() => setCopiedShareLink(false), 2000)
+  }
 
   function getToken() {
     return localStorage.getItem('token') || localStorage.getItem('qurateToken')
@@ -756,7 +1009,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
   const initials = (username || '?').slice(0, 1).toUpperCase()
 
   const totalMergedPRs = useMemo(() => {
-    const trackedMerged = contributions.filter(c => c.status === 'merged').length
+    const trackedMerged = contributions.filter(c => c.status === 'merged' || c.status === 'completed').length
     let ghMerged = 0
     if (heatmap?.monthlyActivity) {
       for (const m of heatmap.monthlyActivity) {
@@ -769,7 +1022,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
   }, [contributions, heatmap])
 
   const openPRsCount = useMemo(() => {
-    const trackedSubmitted = contributions.filter(c => c.status === 'submitted').length
+    const trackedSubmitted = contributions.filter(c => c.status === 'pr_created' || c.status === 'submitted').length
     let ghOpen = 0
     if (heatmap?.monthlyActivity) {
       for (const m of heatmap.monthlyActivity) {
@@ -781,10 +1034,12 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
     return trackedSubmitted + ghOpen
   }, [contributions, heatmap])
 
+  const activeWorkCount = useMemo(() => {
+    return contributions.filter(c => c.status === 'in_progress' || c.status === 'branch_created').length
+  }, [contributions])
+
   const plannedIssuesCount = useMemo(() => {
-    const trackedPlanned = contributions.filter(c => c.status === 'planned').length
-    const localPlanned = readLocalBookmarkContributions().filter(c => c.status === 'planned').length
-    return Math.max(trackedPlanned, localPlanned)
+    return contributions.filter(c => !c.status || c.status === 'planned').length
   }, [contributions])
 
   const statItems = [
@@ -800,11 +1055,20 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
     {
       label: 'In Review',
       value: openPRsCount,
-      colour: 'text-[#1D4ED8]',
-      bg: 'bg-[#1D4ED8]/10',
-      border: 'border-[#1D4ED8]/20',
+      colour: 'text-purple-700',
+      bg: 'bg-purple-500/10',
+      border: 'border-purple-600/20',
       icon: GitPullRequest,
-      desc: 'Active pull request submissions',
+      desc: 'Active PRs in review',
+    },
+    {
+      label: 'Active Work',
+      value: activeWorkCount,
+      colour: 'text-blue-700',
+      bg: 'bg-blue-500/10',
+      border: 'border-blue-600/20',
+      icon: Flame,
+      desc: 'Branches & active coding',
     },
     {
       label: 'Planned',
@@ -813,7 +1077,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
       bg: 'bg-amber-500/10',
       border: 'border-amber-600/20',
       icon: Clock,
-      desc: 'Tracked open source roadmap',
+      desc: 'Roadmap backlog',
     },
     {
       label: 'Annual Activity',
@@ -842,6 +1106,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
             <button onClick={() => onNavigate('feed')}      className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]">Feed</button>
             <button onClick={() => onNavigate('discover')}  className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]">Discover</button>
             <button onClick={() => onNavigate('bookmarks')} className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]">Bookmarks</button>
+            <button onClick={() => onNavigate('works')}     className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]">Works</button>
             <button className="font-bold text-[#1A1A18]">Profile</button>
           </div>
         </div>
@@ -971,6 +1236,27 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                   </div>
                 </div>
               </div>
+
+              {/* Profile Actions: Contributed Works & Share */}
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.('works')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[#2D6A4F]/25 bg-[#2D6A4F]/10 px-3 py-1.5 text-xs font-bold text-[#2D6A4F] shadow-2xs hover:bg-[#2D6A4F] hover:text-white transition"
+                  title="View your PRs and merged work"
+                >
+                  <GitPullRequest className="h-3.5 w-3.5" />
+                  <span>Contributed Works</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white px-3 py-1.5 text-xs font-bold text-[#1A1A18] shadow-2xs hover:border-[#2D6A4F] hover:text-[#2D6A4F] transition"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-[#2D6A4F]" />
+                  <span>Share Profile</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1033,7 +1319,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
         </motion.div>
 
         {/* Unified Compact Stat Strip (Single Unified Row - Zero Repetition, Zero Clutter) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[#1A1A18]/8 rounded-2xl border border-[#1A1A18]/10 bg-white/80 backdrop-blur-xl shadow-xs overflow-hidden">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-[#1A1A18]/8 rounded-2xl border border-[#1A1A18]/10 bg-white/80 backdrop-blur-xl shadow-xs overflow-hidden">
           {statItems.map((s) => {
             const IconComponent = s.icon
             return (
@@ -1191,6 +1477,14 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
                 />
               </div>
             </div>
+
+            {/* Active Contribution Workflow Pipeline (Branch, In Progress, PR & Merged) */}
+            <ContributionWorkflowCard
+              contributions={contributions}
+              onUpdateBookmarkStatus={onUpdateBookmarkStatus}
+              onSyncPullRequestStatus={onSyncPullRequestStatus}
+              onNavigate={onNavigate}
+            />
           </motion.div>
         )}
 
@@ -1204,8 +1498,16 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.3 }}
-            className="space-y-5"
+            className="space-y-6"
           >
+            {/* Active Contribution Workflow Pipeline */}
+            <ContributionWorkflowCard
+              contributions={contributions}
+              onUpdateBookmarkStatus={onUpdateBookmarkStatus}
+              onSyncPullRequestStatus={onSyncPullRequestStatus}
+              onNavigate={onNavigate}
+            />
+
             {/* Full-Width GitHub Contribution Calendar */}
             <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-5 shadow-sm backdrop-blur-xl">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1844,6 +2146,92 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
               </div>
             </form>
           </motion.div>
+        )}
+
+        {/* Share Profile Modal Dialog */}
+        {showShareModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A18]/45 px-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-3xl border border-[#1A1A18]/10 bg-[#FAF8F5] p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-[#1A1A18]/8">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                    <Share2 className="h-4 w-4" />
+                  </div>
+                  <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
+                    Share Developer Passport
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(false)}
+                  className="text-xs font-bold text-[#1A1A18]/50 hover:text-[#1A1A18]"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p className="text-xs text-[#1A1A18]/65 leading-relaxed">
+                Anyone with this public link can view your verified open source contributions, merged PRs, and Stack DNA skill topology without needing an account.
+              </p>
+
+              <div className="rounded-2xl border border-[#1A1A18]/10 bg-white p-3 space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/45">
+                  Public Passport Link
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={publicProfileUrl}
+                    className="w-full rounded-xl border border-[#1A1A18]/15 bg-[#FAF8F5] px-3 py-1.5 font-mono text-xs text-[#1A1A18] select-all outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyPublicLink}
+                    className="inline-flex items-center gap-1 rounded-xl bg-[#2D6A4F] px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#24583F] transition shrink-0"
+                  >
+                    {copiedShareLink ? <Check className="h-3.5 w-3.5 text-white" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{copiedShareLink ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Social Share Intents */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <a
+                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out my verified open-source contributions and Stack DNA on @Qurate: ${publicProfileUrl}`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white py-2 text-xs font-bold text-[#1A1A18] hover:border-black hover:text-black transition"
+                >
+                  <span>Share on X</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+
+                <a
+                  href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(publicProfileUrl)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white py-2 text-xs font-bold text-[#1A1A18] hover:border-[#0A66C2] hover:text-[#0A66C2] transition"
+                >
+                  <span>Share on LinkedIn</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+
+              <div className="pt-2 text-center">
+                <a
+                  href={publicProfileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-bold text-[#2D6A4F] hover:underline inline-flex items-center gap-1"
+                >
+                  <span>Preview your public passport page</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+          </div>
         )}
 
       </section>

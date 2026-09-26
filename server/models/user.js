@@ -31,7 +31,26 @@ const contributionSubSchema = new mongoose.Schema(
             trim: true,
             default: "",
         },
+        issueUrl: {
+            type: String,
+            trim: true,
+            default: "",
+        },
+        branchName: {
+            type: String,
+            trim: true,
+            default: "",
+        },
         pullRequestUrl: {
+            type: String,
+            trim: true,
+            default: "",
+        },
+        prNumber: {
+            type: Number,
+            default: null,
+        },
+        notes: {
             type: String,
             trim: true,
             default: "",
@@ -39,7 +58,15 @@ const contributionSubSchema = new mongoose.Schema(
         status: {
             type: String,
             enum: {
-                values: ["planned", "submitted", "merged"],
+                values: [
+                    "planned",
+                    "branch_created",
+                    "in_progress",
+                    "pr_created",
+                    "submitted",
+                    "merged",
+                    "completed",
+                ],
                 message: "{VALUE} is not a supported contribution status",
             },
             default: "planned",

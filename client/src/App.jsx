@@ -7,12 +7,20 @@ import BookmarkPage from './pages/BookmarkPage.jsx'
 import DiscoverPage from './pages/DiscoverPage.jsx'
 import DiscoveryFeed from './pages/DiscoveryFeed.jsx'
 import Profile from './pages/Profile.jsx'
+import ContributedWorksPage from './pages/ContributedWorksPage.jsx'
+import PublicProfilePage from './pages/PublicProfilePage.jsx'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx'
 import TermsPage from './pages/TermsPage.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 
 const BOOKMARKS_STORAGE_KEY = 'qurateBookmarks'
-const CONTRIBUTION_STATUS_OPTIONS = ['merged', 'submitted', 'planned']
+export const CONTRIBUTION_STATUS_OPTIONS = [
+  'planned',
+  'branch_created',
+  'in_progress',
+  'pr_created',
+  'merged',
+]
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
 
@@ -55,7 +63,10 @@ function App() {
           _id: String(c.issueId || `${c.repoName}::${c.issueTitle}`),
           title: c.issueTitle || '',
           repo: { name: c.repoName || '' },
-          html_url: c.pullRequestUrl || '',
+          html_url: c.issueUrl || c.pullRequestUrl || '',
+          pullRequestUrl: c.pullRequestUrl || '',
+          branchName: c.branchName || '',
+          prNumber: c.prNumber || null,
           bookmarkStatus: c.status || 'planned',
         }))
 
@@ -100,6 +111,9 @@ function App() {
       feed: '/feed',
       discover: '/discover',
       bookmarks: '/bookmarks',
+      works: '/contributed-works',
+      'contributed-works': '/contributed-works',
+      contributions: '/contributed-works',
       profile: '/profile',
       auth: '/auth',
       about: '/about',
@@ -112,7 +126,7 @@ function App() {
 
     // Protect routes
     const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
-    const protectedViews = ['feed', 'discover', 'bookmarks', 'profile']
+    const protectedViews = ['feed', 'discover', 'bookmarks', 'contributed-works', 'contributions', 'profile']
     if (protectedViews.includes(nextView) && !token) {
       navigate('/auth')
       setToast({ type: 'info', text: 'Sign in to access that page.' })
@@ -172,8 +186,8 @@ function App() {
     }
   }, [bookmarks])
 
-  async function persistContribution(issue, status) {
-    const token = localStorage.getItem('qurateToken')
+  async function persistContribution(issue, status, extraData = {}) {
+    const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
     if (!token) return
 
     await fetch(`${API_BASE_URL}/api/users/contributions`, {
@@ -184,40 +198,93 @@ function App() {
       },
       body: JSON.stringify({
         issueId: String(getIssueId(issue)),
-        repoName: issue.repo?.name,
-        issueTitle: issue.title,
-        pullRequestUrl: issue.html_url,
+        repoName: issue.repo?.name || '',
+        issueTitle: issue.title || '',
+        issueUrl: issue.html_url || '',
+        pullRequestUrl: extraData.pullRequestUrl || issue.pullRequestUrl || '',
+        branchName: extraData.branchName || issue.branchName || '',
         status,
+        ...extraData,
       }),
     })
 
     setContributionRefreshKey((current) => current + 1)
   }
 
-  async function updateContributionStatus(issue, status) {
+  async function updateContributionStatus(issue, status, extraData = {}) {
     const issueId = String(getIssueId(issue))
-    const token = localStorage.getItem('qurateToken')
-    if (!token) return
+    const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
 
-    await fetch(`${API_BASE_URL}/api/users/contributions/${issueId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status }),
-    })
-
+    // Optimistic local update
     setBookmarks((current) => {
       const nextBookmarks = current.map((item) =>
         String(getIssueId(item)) === issueId
-          ? { ...item, bookmarkStatus: status }
+          ? { ...item, bookmarkStatus: status, ...extraData }
           : item,
       )
       return nextBookmarks
     })
 
+    if (token) {
+      try {
+        await fetch(`${API_BASE_URL}/api/users/contributions/${issueId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            status,
+            repoName: issue.repo?.name || '',
+            issueTitle: issue.title || '',
+            issueUrl: issue.html_url || '',
+            ...extraData,
+          }),
+        })
+      } catch (err) {
+        console.error('Failed to update contribution status on server:', err)
+      }
+    }
+
     setContributionRefreshKey((current) => current + 1)
+  }
+
+  async function syncPullRequestStatus(issue, prUrl) {
+    const issueId = String(getIssueId(issue))
+    const token = localStorage.getItem('token') || localStorage.getItem('qurateToken')
+    if (!token) return { success: false, error: 'Not authenticated' }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/contributions/sync-pr/${issueId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ pullRequestUrl: prUrl }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setBookmarks((current) => {
+          return current.map((item) =>
+            String(getIssueId(item)) === issueId
+              ? {
+                  ...item,
+                  bookmarkStatus: data.status,
+                  branchName: data.branchName || item.branchName,
+                  pullRequestUrl: prUrl || item.pullRequestUrl,
+                  prNumber: data.prNumber || item.prNumber,
+                }
+              : item,
+          )
+        })
+        setContributionRefreshKey((c) => c + 1)
+        return { success: true, ...data }
+      }
+      return { success: false, error: data.error }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
   }
 
   async function removeContribution(issue) {
@@ -322,6 +389,7 @@ function App() {
                     onSignOut={handleSignOut}
                     onToggleBookmark={toggleBookmark}
                     onUpdateBookmarkStatus={updateContributionStatus}
+                    onSyncPullRequestStatus={syncPullRequestStatus}
                   />
                 </ProtectedRoute>
               }
@@ -336,10 +404,27 @@ function App() {
                     onSignOut={handleSignOut}
                     contributionRefreshKey={contributionRefreshKey}
                     onUserUpdate={setUser}
+                    bookmarks={bookmarks}
+                    onUpdateBookmarkStatus={updateContributionStatus}
+                    onSyncPullRequestStatus={syncPullRequestStatus}
                   />
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/contributed-works"
+              element={
+                <ProtectedRoute>
+                  <ContributedWorksPage
+                    bookmarks={bookmarks}
+                    onNavigate={handleViewChange}
+                    onSyncPullRequestStatus={syncPullRequestStatus}
+                  />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/contributions" element={<Navigate to="/contributed-works" replace />} />
+            <Route path="/u/:username" element={<PublicProfilePage />} />
             <Route path="/about" element={<AboutPage onNavigate={handleViewChange} />} />
             <Route path="/privacy" element={<PrivacyPolicyPage onNavigate={handleViewChange} />} />
             <Route path="/terms" element={<TermsPage onNavigate={handleViewChange} />} />
@@ -357,7 +442,6 @@ function App() {
           onStatusChange={setBookmarkStatus}
           onCancel={() => setPendingBookmarkIssue(null)}
           onConfirm={confirmBookmarkStatus}
-          options={CONTRIBUTION_STATUS_OPTIONS}
         />
       )}
 
@@ -390,29 +474,55 @@ function readStoredBookmarks() {
   }
 }
 
-function BookmarkStatusModal({ issue, status, onStatusChange, onCancel, onConfirm, options }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A18]/45 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#1A1A18]/10 bg-[#F7F5F0] p-6 shadow-2xl">
-        <h2 className="[font-family:Georgia,serif] text-2xl font-bold text-[#1A1A18]">Set bookmark status</h2>
-        <p className="mt-2 text-sm font-medium text-[#1A1A18]/65">Choose how you want to track this issue in your profile.</p>
+function BookmarkStatusModal({ issue, status, onStatusChange, onCancel, onConfirm }) {
+  const STAGES = [
+    { id: 'planned', label: 'Planned Backlog', desc: 'Saved to roadmap to tackle later' },
+    { id: 'branch_created', label: 'Branch Created', desc: 'Working branch initialized locally' },
+    { id: 'in_progress', label: 'Still Working', desc: 'Actively coding the contribution' },
+    { id: 'pr_created', label: 'PR Generated', desc: 'Pull request opened for maintainer review' },
+    { id: 'merged', label: 'PR Merged', desc: 'Verified merged into upstream repository' },
+  ]
 
-        <div className="mt-4 rounded-xl border border-[#1A1A18]/10 bg-white/60 p-4">
-          <p className="text-sm font-semibold text-[#1A1A18]">{issue.title}</p>
-          <p className="mt-1 text-xs font-medium text-[#1A1A18]/55">{issue.repo?.name}</p>
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A18]/45 px-4 backdrop-blur-xs">
+      <div className="w-full max-w-lg rounded-3xl border border-[#1A1A18]/10 bg-[#FAF8F5] p-6 shadow-2xl">
+        <h2 className="[font-family:Georgia,serif] text-xl sm:text-2xl font-bold text-[#1A1A18]">
+          Contribution Workflow Stage
+        </h2>
+        <p className="mt-1 text-xs font-medium text-[#1A1A18]/65">
+          Choose where you currently are in the contribution lifecycle.
+        </p>
+
+        <div className="mt-3.5 rounded-2xl border border-[#1A1A18]/10 bg-white/70 p-3.5 shadow-2xs">
+          <p className="text-sm font-bold text-[#1A1A18] line-clamp-1">{issue.title}</p>
+          <p className="mt-0.5 text-xs font-medium text-[#2D6A4F]">{issue.repo?.name}</p>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          {options.map((option) => {
-            const selected = status === option
+        <div className="mt-4 space-y-2">
+          {STAGES.map((s) => {
+            const selected = status === s.id
             return (
               <button
-                key={option}
+                key={s.id}
                 type="button"
-                onClick={() => onStatusChange(option)}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${selected ? 'border-[#2D6A4F] bg-[#2D6A4F] text-[#F7F5F0]' : 'border-[#1A1A18]/15 bg-white/55 text-[#1A1A18]/70 hover:border-[#2D6A4F] hover:text-[#2D6A4F]'}`}
+                onClick={() => onStatusChange(s.id)}
+                className={`w-full flex items-center justify-between rounded-xl border p-3 text-left transition ${
+                  selected
+                    ? 'border-[#2D6A4F] bg-[#2D6A4F]/10 ring-1 ring-[#2D6A4F]/30'
+                    : 'border-[#1A1A18]/10 bg-white/60 hover:bg-white hover:border-[#1A1A18]/20'
+                }`}
               >
-                {option}
+                <div>
+                  <p className={`text-xs font-bold ${selected ? 'text-[#2D6A4F]' : 'text-[#1A1A18]'}`}>
+                    {s.label}
+                  </p>
+                  <p className="text-[11px] text-[#1A1A18]/55">{s.desc}</p>
+                </div>
+                <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                  selected ? 'border-[#2D6A4F] bg-[#2D6A4F] text-white' : 'border-[#1A1A18]/20'
+                }`}>
+                  {selected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                </div>
               </button>
             )
           })}
@@ -422,16 +532,16 @@ function BookmarkStatusModal({ issue, status, onStatusChange, onCancel, onConfir
           <button
             type="button"
             onClick={onCancel}
-            className="h-11 flex-1 rounded-md border border-[#1A1A18]/15 px-4 text-sm font-semibold text-[#1A1A18]/65 transition hover:border-[#1A1A18]/25"
+            className="h-10 flex-1 rounded-xl border border-[#1A1A18]/15 px-4 text-xs font-semibold text-[#1A1A18]/70 transition hover:bg-white"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onConfirm(status)}
-            className="h-11 flex-1 rounded-md bg-[#2D6A4F] px-4 text-sm font-bold text-[#F7F5F0] transition hover:bg-[#24583F]"
+            className="h-10 flex-1 rounded-xl bg-[#2D6A4F] px-4 text-xs font-bold text-[#F7F5F0] transition hover:bg-[#24583F] shadow-sm"
           >
-            Save bookmark
+            Confirm Stage
           </button>
         </div>
       </div>

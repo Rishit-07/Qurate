@@ -67,6 +67,9 @@ export function Layout({
                     </span>
                   )}
                 </NavLink>
+                <NavLink to="/contributed-works" className={navLinkClass}>
+                  Works
+                </NavLink>
                 <NavLink to="/profile" className={navLinkClass}>
                   Profile
                 </NavLink>
