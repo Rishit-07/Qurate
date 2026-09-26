@@ -145,6 +145,26 @@ export const githubOAuthLogin = async (req, res) => {
             }
         }
 
+        // If GitHub Personal Access Token provided
+        const pat = req.body.token || req.body.personalAccessToken;
+        if (!githubProfile && pat && typeof pat === "string") {
+            try {
+                const userResponse = await axios.get("https://api.github.com/user", {
+                    headers: {
+                        Accept: "application/vnd.github.v3+json",
+                        Authorization: `Bearer ${pat.trim()}`,
+                        "User-Agent": "Qurate-App",
+                    },
+                });
+                githubProfile = userResponse.data;
+            } catch (patErr) {
+                const status = patErr.response?.status || 401;
+                return res.status(status).json({
+                    error: patErr.response?.data?.message || "Invalid GitHub Personal Access Token.",
+                });
+            }
+        }
+
         // If GitHub username provided directly, fetch public GitHub profile
         if (!githubProfile && githubUsername && typeof githubUsername === "string") {
             try {
