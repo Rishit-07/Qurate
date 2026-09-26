@@ -1,9 +1,37 @@
 import express from "express";
 import protect from "../middleware/auth.js";
 import User from "../models/user.js";
+import Issue from "../models/issue.js";
 import bcrypt from "bcryptjs";
+import { calculateStackDna } from "../services/stackDnaService.js";
 
 const router = express.Router();
+
+// Get Stack DNA Radar metrics and archetype for authenticated user
+router.get("/stack-dna", protect, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id)
+            .populate("bookmarks")
+            .select("username stack experienceLevel bookmarks contributions");
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        const stackDna = calculateStackDna(user);
+        return res.json({ success: true, stackDna });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Get fresh user profile for authenticated user
+router.get("/profile", protect, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select("-password");
+        if (!user) return res.status(404).json({ error: "User not found" });
+        return res.json({ success: true, user });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
 
 // Get contribution log for authenticated user
 router.get("/contributions", protect, async (req, res) => {

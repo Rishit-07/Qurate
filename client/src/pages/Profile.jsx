@@ -16,7 +16,18 @@ import {
   CheckCircle2,
   AlertCircle,
   Layers,
+  Sparkles,
+  TrendingUp,
+  Activity,
+  Settings,
+  Calendar,
+  RefreshCw,
+  ChevronRight,
+  FileText,
+  ArrowUpRight,
+  Dna,
 } from 'lucide-react'
+import StackDnaRadarCard from '../components/StackDnaRadarCard'
 
 const RAW_API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:5000' : '')
 const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, '')
@@ -498,6 +509,7 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
   const [selectedDay,     setSelectedDay]     = useState(null)
   const [dayDetail,       setDayDetail]       = useState(null)
   const [dayLoading,      setDayLoading]      = useState(false)
+  const [activeTab,       setActiveTab]       = useState('overview')
 
   function getToken() {
     return localStorage.getItem('token') || localStorage.getItem('qurateToken')
@@ -533,6 +545,28 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
       setUploadingAvatar(false)
     }
   }
+
+  // Fetch authentic user profile from server
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    fetch(`${API_BASE_URL}/api/users/profile`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        if (d.user) {
+          if (d.user.username) setUsername(d.user.username)
+          if (d.user.githubUsername) setGithubUsername(d.user.githubUsername)
+          if (Array.isArray(d.user.stack)) setStack(d.user.stack)
+          if (d.user.experienceLevel) setLevel(d.user.experienceLevel)
+          if (d.user.avatar) setAvatar(d.user.avatar)
+          if (d.user.role) setRole(d.user.role)
+          onUserUpdate?.(d.user)
+          localStorage.setItem('qurateUser', JSON.stringify(d.user))
+          localStorage.setItem('user', JSON.stringify(d.user))
+        }
+      })
+      .catch(() => {})
+  }, [contributionRefreshKey])
 
   useEffect(() => {
     const token = getToken()
@@ -602,8 +636,13 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
       .finally(() => setHeatLoading(false))
   }, [])
 
-  useEffect(() => { if (initialUser?.githubUsername) fetchHeatmap(initialUser.githubUsername) }, [initialUser?.githubUsername, contributionRefreshKey]) // eslint-disable-line
-  useEffect(() => { if (initialUser?.githubUsername) fetchGithubActivity(initialUser.githubUsername) }, [initialUser?.githubUsername, contributionRefreshKey]) // eslint-disable-line
+  useEffect(() => {
+    const target = (githubUsername || initialUser?.githubUsername || '').trim()
+    if (target) {
+      fetchHeatmap(target)
+      fetchGithubActivity(target)
+    }
+  }, [githubUsername, initialUser?.githubUsername, contributionRefreshKey, fetchHeatmap, fetchGithubActivity])
 
   // Combine and deduplicate all real activity and contributions
   const allMergedContributions = useMemo(() => {
@@ -716,18 +755,89 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
 
   const initials = (username || '?').slice(0, 1).toUpperCase()
 
+  const totalMergedPRs = useMemo(() => {
+    const trackedMerged = contributions.filter(c => c.status === 'merged').length
+    let ghMerged = 0
+    if (heatmap?.monthlyActivity) {
+      for (const m of heatmap.monthlyActivity) {
+        if (m.pullRequests) {
+          ghMerged += m.pullRequests.filter(pr => (pr.state || '').toUpperCase() === 'MERGED').length
+        }
+      }
+    }
+    return trackedMerged + ghMerged
+  }, [contributions, heatmap])
+
+  const openPRsCount = useMemo(() => {
+    const trackedSubmitted = contributions.filter(c => c.status === 'submitted').length
+    let ghOpen = 0
+    if (heatmap?.monthlyActivity) {
+      for (const m of heatmap.monthlyActivity) {
+        if (m.pullRequests) {
+          ghOpen += m.pullRequests.filter(pr => (pr.state || '').toUpperCase() === 'OPEN').length
+        }
+      }
+    }
+    return trackedSubmitted + ghOpen
+  }, [contributions, heatmap])
+
+  const plannedIssuesCount = useMemo(() => {
+    const trackedPlanned = contributions.filter(c => c.status === 'planned').length
+    const localPlanned = readLocalBookmarkContributions().filter(c => c.status === 'planned').length
+    return Math.max(trackedPlanned, localPlanned)
+  }, [contributions])
+
   const statItems = [
-    { label: 'Merged',    value: contributions.filter(c => c.status === 'merged').length,    colour: 'text-[#2D6A4F]' },
-    { label: 'Submitted', value: contributions.filter(c => c.status === 'submitted').length, colour: 'text-[#1A1A18]' },
-    { label: 'Planned',   value: contributions.filter(c => c.status === 'planned').length,   colour: 'text-[#1A1A18]/55' },
+    {
+      label: 'Merged PRs',
+      value: totalMergedPRs,
+      colour: 'text-[#2D6A4F]',
+      bg: 'bg-[#2D6A4F]/10',
+      border: 'border-[#2D6A4F]/20',
+      icon: GitMerge,
+      desc: 'Verified merged pull requests',
+    },
+    {
+      label: 'In Review',
+      value: openPRsCount,
+      colour: 'text-[#1D4ED8]',
+      bg: 'bg-[#1D4ED8]/10',
+      border: 'border-[#1D4ED8]/20',
+      icon: GitPullRequest,
+      desc: 'Active pull request submissions',
+    },
+    {
+      label: 'Planned',
+      value: plannedIssuesCount,
+      colour: 'text-amber-800',
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-600/20',
+      icon: Clock,
+      desc: 'Tracked open source roadmap',
+    },
+    {
+      label: 'Annual Activity',
+      value: heatmap?.totalContributions || 0,
+      colour: 'text-[#2D6A4F]',
+      bg: 'bg-[#2D6A4F]/10',
+      border: 'border-[#2D6A4F]/20',
+      icon: Sparkles,
+      desc: 'Recorded GitHub contributions',
+    },
   ]
 
   return (
-    <main className="min-h-screen bg-[#F7F5F0] text-[#1A1A18] antialiased">
+    <main className="min-h-screen bg-[#F7F5F0] text-[#1A1A18] antialiased overflow-x-hidden w-full">
 
-      <nav className="sticky top-0 z-20 border-b border-[#1A1A18]/10 bg-[#F7F5F0]/95 backdrop-blur">
+      {/* Modern Blurred Navigation Bar */}
+      <nav className="sticky top-0 z-30 border-b border-[#1A1A18]/10 bg-[#F7F5F0]/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6 sm:px-8">
-          <p className="[font-family:Georgia,serif] text-xl italic tracking-normal">Qurate</p>
+          <div className="flex items-center gap-3">
+            <p className="[font-family:Georgia,serif] text-xl font-bold tracking-normal text-[#1A1A18]">Qurate</p>
+            <span className="hidden sm:inline-block rounded-full bg-[#2D6A4F]/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#2D6A4F]">
+              Studio
+            </span>
+          </div>
           <div className="flex items-center gap-5 text-sm font-medium sm:gap-8">
             <button onClick={() => onNavigate('feed')}      className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]">Feed</button>
             <button onClick={() => onNavigate('discover')}  className="text-[#1A1A18]/65 transition hover:text-[#2D6A4F]">Discover</button>
@@ -737,601 +847,1004 @@ function ProfilePage({ user: initialUser, onNavigate, onSignOut, contributionRef
         </div>
       </nav>
 
-      <section className="mx-auto w-full max-w-3xl border-x border-[#1A1A18]/10 px-6 py-10 sm:px-8">
+      <section className="mx-auto w-full max-w-6xl px-4 sm:px-8 py-8 space-y-8">
 
-        {/* Rebuilt Identity Card (21st.dev Modern Profile Architecture) */}
+        {/* ================================================================ */}
+        {/* CINEMATIC DEVELOPER PASSPORT HERO                                */}
+        {/* ================================================================ */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="relative mb-8 overflow-hidden rounded-2xl border border-[#1A1A18]/10 bg-white/75 p-6 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.03)]"
+          className="relative overflow-hidden rounded-3xl border border-[#1A1A18]/10 bg-white/80 shadow-[0_4px_30px_rgba(0,0,0,0.03)] backdrop-blur-xl"
         >
-          {/* Subtle ambient mesh glow */}
-          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#2D6A4F]/10 blur-3xl" />
+          {/* Architectural Mesh Cover Banner */}
+          <div className="relative h-28 sm:h-32 w-full overflow-hidden bg-gradient-to-r from-[#111714] via-[#1B3629] to-[#2D6A4F]">
+            {/* Grid dot mesh overlay */}
+            <div className="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px] opacity-15" />
+            <div className="absolute -bottom-8 -right-8 h-48 w-48 rounded-full bg-[#52B788]/20 blur-3xl" />
+            <div className="absolute top-3 right-4 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-0.5 text-[11px] font-semibold text-white/95 backdrop-blur-md border border-white/10">
+                <Sparkles className="h-3 w-3 text-emerald-300" />
+                Open Source Contributor
+              </span>
+            </div>
+          </div>
 
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-            {/* Left: Avatar + Details */}
-            <div className="flex items-center gap-5">
-              {/* Avatar with dynamic ring & hover lens */}
-              <div className="relative group shrink-0">
-                <div className="relative h-20 w-20 sm:h-22 sm:w-22 overflow-hidden rounded-2xl border-2 border-white shadow-md ring-2 ring-[#2D6A4F]/20 transition-all duration-300 group-hover:ring-[#2D6A4F]/60">
-                  {avatar ? (
-                    <img
-                      src={avatar.startsWith('http') ? avatar : `${API_BASE_URL}${avatar}`}
-                      alt={username}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          {/* Identity Bar */}
+          <div className="px-5 pb-4 pt-2 sm:px-6">
+            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              {/* Avatar + Personal Credentials */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                {/* Elevated Avatar Lens (Only Avatar shifts up over banner) */}
+                <div className="relative group shrink-0 -mt-10 sm:-mt-12">
+                  <div className="relative h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-2xl border-[3px] border-[#F7F5F0] bg-white shadow-lg ring-1 ring-[#1A1A18]/10">
+                    {avatar ? (
+                      <img
+                        src={avatar.startsWith('http') ? avatar : `${API_BASE_URL}${avatar}`}
+                        alt={username}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-[#2D6A4F]/10 [font-family:Georgia,serif] text-2xl sm:text-3xl font-bold text-[#2D6A4F]">
+                        {initials}
+                      </div>
+                    )}
+
+                    {/* Camera upload lens overlay */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingAvatar}
+                      title="Update profile picture"
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-white opacity-0 backdrop-blur-[2px] transition-all duration-200 group-hover:opacity-100"
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-white" />
+                      ) : (
+                        <>
+                          <Camera className="h-4 w-4 text-white/95" />
+                          <span className="text-[10px] font-bold">Edit Photo</span>
+                        </>
+                      )}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
                     />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-[#2D6A4F]/10 [font-family:Georgia,serif] text-2xl sm:text-3xl font-bold text-[#2D6A4F]">
-                      {initials}
-                    </div>
-                  )}
-
-                  {/* Hover lens overlay with smooth motion */}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingAvatar}
-                    className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-white opacity-0 backdrop-blur-[2px] transition-all duration-200 group-hover:opacity-100"
-                  >
-                    {uploadingAvatar ? (
-                      <Loader2 className="h-5 w-5 animate-spin text-white" />
-                    ) : (
-                      <>
-                        <Camera className="h-5 w-5 text-white/90" />
-                        <span className="text-[10px] font-semibold tracking-wide">Edit</span>
-                      </>
-                    )}
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleAvatarUpload}
-                  />
-                </div>
-                {/* Active status pip */}
-                <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-[#1A1A18]/10">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#2D6A4F]" />
-                </span>
-              </div>
-
-              {/* Identity Details */}
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="[font-family:Georgia,serif] text-2xl sm:text-3xl font-bold tracking-tight text-[#1A1A18] truncate">
-                    {username || 'Your profile'}
-                  </h1>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                    role === 'admin'
-                      ? 'bg-amber-100/80 text-amber-900 border border-amber-300/60 shadow-sm'
-                      : 'bg-[#2D6A4F]/10 text-[#2D6A4F] border border-[#2D6A4F]/20'
-                  }`}>
-                    {role === 'admin' ? (
-                      <>
-                        <ShieldCheck className="h-3 w-3" />
-                        Admin
-                      </>
-                    ) : (
-                      <>
-                        <Code2 className="h-3 w-3" />
-                        Contributor
-                      </>
-                    )}
+                  </div>
+                  {/* Status pip */}
+                  <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow ring-2 ring-[#2D6A4F]/20">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#2D6A4F] animate-pulse" />
                   </span>
                 </div>
 
-                <div className="mt-1.5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3 text-xs sm:text-sm text-[#1A1A18]/60">
-                  {initialUser?.email && (
-                    <span className="inline-flex items-center gap-1.5 truncate">
-                      <Mail className="h-3.5 w-3.5 text-[#1A1A18]/40 shrink-0" />
-                      <span className="truncate">{initialUser.email}</span>
+                {/* Identity Metadata */}
+                <div className="pb-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="[font-family:Georgia,serif] text-xl sm:text-2xl font-bold tracking-tight text-[#1A1A18]">
+                      {username || 'Your profile'}
+                    </h1>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      role === 'admin'
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-[#2D6A4F]/10 text-[#2D6A4F] border border-[#2D6A4F]/20'
+                    }`}>
+                      {role === 'admin' ? (
+                        <>
+                          <ShieldCheck className="h-3 w-3" />
+                          Admin
+                        </>
+                      ) : (
+                        <>
+                          <Code2 className="h-3 w-3" />
+                          Contributor
+                        </>
+                      )}
                     </span>
-                  )}
-                  {githubUsername && (
-                    <a
-                      href={`https://github.com/${githubUsername}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group/gh inline-flex items-center gap-1 font-semibold text-[#2D6A4F] transition-colors hover:text-[#24583F]"
-                    >
-                      <span>@{githubUsername}</span>
-                      <ExternalLink className="h-3 w-3 transition-transform group-hover/gh:translate-x-0.5 group-hover/gh:-translate-y-0.5" />
-                    </a>
-                  )}
+                  </div>
+
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[#1A1A18]/65">
+                    {initialUser?.email && (
+                      <span className="inline-flex items-center gap-1 font-medium">
+                        <Mail className="h-3.5 w-3.5 text-[#1A1A18]/45" />
+                        <span>{initialUser.email}</span>
+                      </span>
+                    )}
+                    {githubUsername && (
+                      <a
+                        href={`https://github.com/${githubUsername}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group/gh inline-flex items-center gap-1 font-semibold text-[#2D6A4F] hover:underline"
+                      >
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                          <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                        </svg>
+                        <span>@{githubUsername}</span>
+                        <ExternalLink className="h-2.5 w-2.5 transition-transform group-hover/gh:translate-x-0.5 group-hover/gh:-translate-y-0.5" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Right: Stat Bento Counters */}
-            <div className="grid grid-cols-3 gap-2.5 sm:flex sm:gap-3 shrink-0">
-              {statItems.map((s, idx) => (
-                <motion.div
-                  key={s.label}
-                  whileHover={{ y: -2, scale: 1.02 }}
-                  transition={{ duration: 0.2 }}
-                  className="flex flex-col items-center justify-center rounded-xl border border-[#1A1A18]/10 bg-white/60 px-4 py-2.5 shadow-sm transition hover:border-[#2D6A4F]/30 hover:bg-white"
-                >
-                  <div className="flex items-center gap-1">
-                    {idx === 0 && <GitMerge className="h-3 w-3 text-[#2D6A4F]" />}
-                    {idx === 1 && <GitPullRequest className="h-3 w-3 text-[#1A1A18]/70" />}
-                    {idx === 2 && <Clock className="h-3 w-3 text-[#1A1A18]/45" />}
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/50">
+          {/* Sleek Horizontal Tab Bar (Linear/Apple-style minimal tabs, single line, no wrap) */}
+          <div className="border-t border-[#1A1A18]/8 px-4 sm:px-6 bg-[#FAF8F5]/80 backdrop-blur-sm">
+            <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto py-2 no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setActiveTab('overview')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  activeTab === 'overview'
+                    ? 'bg-white text-[#2D6A4F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] ring-1 ring-[#1A1A18]/10'
+                    : 'text-[#1A1A18]/60 hover:text-[#1A1A18] hover:bg-black/[0.03]'
+                }`}
+              >
+                <Dna className="h-3.5 w-3.5" />
+                <span>Overview</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('contributions')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  activeTab === 'contributions'
+                    ? 'bg-white text-[#2D6A4F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] ring-1 ring-[#1A1A18]/10'
+                    : 'text-[#1A1A18]/60 hover:text-[#1A1A18] hover:bg-black/[0.03]'
+                }`}
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                <span>Contributions</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('activity')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  activeTab === 'activity'
+                    ? 'bg-white text-[#2D6A4F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] ring-1 ring-[#1A1A18]/10'
+                    : 'text-[#1A1A18]/60 hover:text-[#1A1A18] hover:bg-black/[0.03]'
+                }`}
+              >
+                <Activity className="h-3.5 w-3.5" />
+                <span>Activity</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  activeTab === 'settings'
+                    ? 'bg-white text-[#2D6A4F] shadow-[0_1px_3px_rgba(0,0,0,0.06)] ring-1 ring-[#1A1A18]/10'
+                    : 'text-[#1A1A18]/60 hover:text-[#1A1A18] hover:bg-black/[0.03]'
+                }`}
+              >
+                <Settings className="h-3.5 w-3.5" />
+                <span>Settings</span>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Unified Compact Stat Strip (Single Unified Row - Zero Repetition, Zero Clutter) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[#1A1A18]/8 rounded-2xl border border-[#1A1A18]/10 bg-white/80 backdrop-blur-xl shadow-xs overflow-hidden">
+          {statItems.map((s) => {
+            const IconComponent = s.icon
+            return (
+              <div key={s.label} className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/60 transition">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${s.bg} ${s.colour}`}>
+                  <IconComponent className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className={`[font-family:Georgia,serif] text-lg font-bold leading-none ${s.colour}`}>
+                      {s.value}
+                    </span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#1A1A18]/50 truncate">
                       {s.label}
                     </span>
                   </div>
-                  <p className={`mt-0.5 [font-family:Georgia,serif] text-2xl font-bold ${s.colour}`}>
-                    {s.value}
-                  </p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Rebuilt Account Settings Card (21st.dev Animated Form) */}
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
-          className="rounded-2xl border border-[#1A1A18]/10 bg-white/75 p-6 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.03)]"
-        >
-          <div className="mb-6 flex flex-col gap-1 border-b border-[#1A1A18]/8 pb-4">
-            <h2 className="[font-family:Georgia,serif] text-xl font-bold tracking-tight text-[#1A1A18]">
-              Account settings
-            </h2>
-            <p className="text-xs text-[#1A1A18]/55">
-              Manage your public identity, experience level, and preferred technologies.
-            </p>
-          </div>
-
-          <form onSubmit={handleSave} className="space-y-6">
-            {/* Two-column Input Fields */}
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
-                  Display name
-                </label>
-                <div className="relative flex items-center">
-                  <User className="pointer-events-none absolute left-3.5 h-4 w-4 text-[#1A1A18]/40" />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-[#1A1A18]/15 bg-white/80 pl-10 pr-4 text-sm text-[#1A1A18] shadow-sm outline-none transition placeholder:text-[#1A1A18]/30 focus:border-[#2D6A4F] focus:bg-white focus:ring-4 focus:ring-[#2D6A4F]/10"
-                    placeholder="Your name"
-                  />
+                  <p className="text-[10px] text-[#1A1A18]/45 truncate mt-0.5">{s.desc}</p>
                 </div>
               </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
-                  GitHub username
-                </label>
-                <div className="relative flex items-center">
-                  <span className="pointer-events-none absolute left-3.5 text-[#1A1A18]/40">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-                    </svg>
-                  </span>
-                  <input
-                    type="text"
-                    value={githubUsername}
-                    onChange={e => setGithubUsername(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-[#1A1A18]/15 bg-white/80 pl-10 pr-4 text-sm text-[#1A1A18] shadow-sm outline-none transition placeholder:text-[#1A1A18]/30 focus:border-[#2D6A4F] focus:bg-white focus:ring-4 focus:ring-[#2D6A4F]/10"
-                    placeholder="e.g. torvalds"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Modern 21st.dev Segmented Slider for Experience Level */}
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
-                Experience level
-              </label>
-              <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-[#1A1A18]/5 p-1">
-                {['beginner', 'intermediate', 'advanced'].map((lvl) => {
-                  const isSelected = level === lvl
-                  return (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => setLevel(lvl)}
-                      className={`relative z-10 flex h-10 items-center justify-center rounded-lg text-xs font-bold capitalize transition-colors ${
-                        isSelected ? 'text-[#2D6A4F]' : 'text-[#1A1A18]/65 hover:text-[#1A1A18]'
-                      }`}
-                    >
-                      {isSelected && (
-                        <motion.div
-                          layoutId="active-level-indicator"
-                          className="absolute inset-0 rounded-lg bg-white shadow-sm ring-1 ring-[#1A1A18]/5"
-                          transition={{ type: 'spring', stiffness: 450, damping: 35 }}
-                        />
-                      )}
-                      <span className="relative z-20 flex items-center gap-1.5">
-                        {lvl}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Tech Stack Interactive Filter Chips with Counter */}
-            <div>
-              <div className="mb-2.5 flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-[#1A1A18]/70">
-                  Tech stack
-                </label>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#2D6A4F]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#2D6A4F]">
-                  <Layers className="h-3 w-3" />
-                  {stack.length} selected
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {STACK_OPTIONS.map(tech => {
-                  const active = stack.includes(tech.toLowerCase())
-                  return (
-                    <motion.button
-                      key={tech}
-                      type="button"
-                      whileTap={{ scale: 0.94 }}
-                      onClick={() => toggleStack(tech)}
-                      className={`group flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all duration-200 ${
-                        active
-                          ? 'border-[#2D6A4F] bg-[#2D6A4F]/12 text-[#2D6A4F] shadow-sm'
-                          : 'border-[#1A1A18]/12 bg-white/70 text-[#1A1A18]/65 hover:border-[#2D6A4F]/40 hover:bg-white hover:text-[#1A1A18]'
-                      }`}
-                    >
-                      {active && (
-                        <motion.span
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#2D6A4F] text-white"
-                        >
-                          <Check className="h-2.5 w-2.5 stroke-[3]" />
-                        </motion.span>
-                      )}
-                      <span>{tech}</span>
-                    </motion.button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Feedback Toast Notification */}
-            <AnimatePresence>
-              {saveMsg.text && (
-                <motion.div
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 text-xs font-semibold shadow-sm ${
-                    saveMsg.type === 'success'
-                      ? 'border-[#2D6A4F]/25 bg-[#2D6A4F]/10 text-[#2D6A4F]'
-                      : 'border-red-700/20 bg-red-700/10 text-red-800'
-                  }`}
-                >
-                  {saveMsg.type === 'success' ? (
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2D6A4F]" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 shrink-0 text-red-800" />
-                  )}
-                  <span>{saveMsg.text}</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-3 pt-2">
-              <motion.button
-                type="submit"
-                disabled={saving}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#2D6A4F] px-6 text-sm font-bold text-[#F7F5F0] shadow-md shadow-[#2D6A4F]/20 transition-all hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin text-[#F7F5F0]" />
-                    <span>Saving changes…</span>
-                  </>
-                ) : (
-                  <span>Save changes</span>
-                )}
-              </motion.button>
-
-              <motion.button
-                type="button"
-                onClick={onSignOut}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex h-11 items-center justify-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white/70 px-5 text-sm font-semibold text-[#1A1A18]/65 shadow-sm transition hover:border-red-600/30 hover:bg-red-50/50 hover:text-red-700"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Sign out</span>
-              </motion.button>
-            </div>
-          </form>
-        </motion.div>
-
-        <div className="mt-6 rounded-lg border border-[#1A1A18]/10 bg-white/55 px-6 py-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="[font-family:Georgia,serif] text-xl font-bold text-[#1A1A18]">GitHub contributions</h2>
-              <p className="mt-0.5 text-xs font-medium text-[#1A1A18]/50">{githubUsername ? `Live data from @${githubUsername}` : 'Add your GitHub username above and save to load your heatmap'}</p>
-            </div>
-            {githubUsername && (<button type="button" onClick={() => fetchHeatmap(githubUsername)} className="rounded-md border border-[#1A1A18]/15 px-3 py-1.5 text-xs font-semibold text-[#1A1A18]/60 transition hover:border-[#2D6A4F] hover:text-[#2D6A4F]">Refresh</button>)}
-          </div>
-
-          {!githubUsername && (
-            <div className="py-10 text-center">
-              <p className="text-3xl">🌿</p>
-              <p className="mt-3 text-sm font-medium text-[#1A1A18]/50">Enter your GitHub username above, save, and your contribution history will appear here.</p>
-            </div>
-          )}
-
-          {githubUsername && heatLoading && (
-            <div className="space-y-2 py-4">
-              {[1, 2].map(i => (<div key={i} className="h-3 w-full animate-pulse rounded bg-[#1A1A18]/8"/>))}
-              <p className="mt-3 text-center text-xs font-medium text-[#1A1A18]/45">Loading GitHub data…</p>
-            </div>
-          )}
-
-          {githubUsername && heatError && !heatLoading && (
-            <p className="rounded-md border border-red-700/20 bg-red-700/10 px-4 py-3 text-sm font-medium text-red-800">{heatError}</p>
-          )}
-
-          {heatmap && !heatLoading && (
-            <ContributionHeatmap
-              days={heatmap.days}
-              total={heatmap.totalContributions}
-              selectedDay={selectedDay}
-              onSelectDay={setSelectedDay}
-            />
-          )}
+            )
+          })}
         </div>
 
-        <div className="mt-6 rounded-lg border border-[#1A1A18]/10 bg-white/55 px-6 py-6 shadow-sm">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="[font-family:Georgia,serif] text-xl font-bold text-[#1A1A18]">Contribution log</h2>
-              <p className="mt-0.5 text-xs font-medium text-[#1A1A18]/50">
-                {selectedDay
-                  ? `Showing activity for ${formatFullDate(selectedDay.date)}`
-                  : 'Live timeline of your verified commits, pull requests, and activity'}
-              </p>
-            </div>
-            {selectedDay && (
-              <button
-                type="button"
-                onClick={() => setSelectedDay(null)}
-                className="rounded-md border border-[#2D6A4F]/30 bg-white/80 px-3 py-1.5 text-xs font-bold text-[#2D6A4F] shadow-sm transition hover:bg-white"
-              >
-                Show all months ✕
-              </button>
-            )}
-          </div>
+        {/* ================================================================ */}
+        {/* VIEW 1: PORTFOLIO & ACTIVITY WORKSPACE                           */}
+        {/* ================================================================ */}
+        {activeTab === 'overview' && (
+          <motion.div
+            key="overview-tab"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-8"
+          >
+            {/* 2-Column Bento Workspace: Developer Dossier + Stack DNA Topology (Zero Scroll Overload) */}
+            <div className="grid lg:grid-cols-12 gap-5 items-start">
+              {/* Left Column (Col 5): Developer Dossier & GitHub Link */}
+              <div className="lg:col-span-5 space-y-4">
+                {/* Dossier Card */}
+                <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-5 shadow-sm backdrop-blur-xl">
+                  <div className="flex items-center gap-2 mb-3 pb-2.5 border-b border-[#1A1A18]/8">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                      <Code2 className="h-4 w-4" />
+                    </div>
+                    <h3 className="text-sm font-bold text-[#1A1A18]">Developer Profile</h3>
+                  </div>
 
-          {selectedDay && (
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2D6A4F]/25 bg-[#2D6A4F]/10 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-2.5 w-2.5 rounded-full bg-[#2D6A4F] animate-pulse" />
-                <span className="text-sm font-semibold text-[#1A1A18]">
-                  Selected Day: <span className="font-bold text-[#2D6A4F]">{formatFullDate(selectedDay.date)}</span>
-                </span>
-                <span className="rounded-full bg-[#2D6A4F]/20 px-2.5 py-0.5 text-xs font-bold text-[#2D6A4F]">
-                  {selectedDay.contributionCount} contribution{selectedDay.contributionCount !== 1 ? 's' : ''}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {selectedDay ? (
-            /* ============================================================ */
-            /* SINGLE DAY SELECTED VIEW                                     */
-            /* ============================================================ */
-            <div className="relative pl-5 sm:pl-7">
-              {/* Left continuous timeline bar */}
-              <div className="absolute left-2.5 sm:left-3.5 top-0 bottom-0 w-0.5 bg-[#1A1A18]/15" />
-
-              {dayLoading ? (
-                <div className="py-10 text-center">
-                  <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#2D6A4F] border-t-transparent" />
-                  <p className="mt-3 text-xs font-medium text-[#1A1A18]/60">Fetching verified GitHub day activity…</p>
-                </div>
-              ) : (
-                (() => {
-                  const detail = dayDetail || heatmap?.dailyActivity?.[selectedDay.date]
-                  const hasCommits = detail?.commitRepos?.length > 0 && detail.totalCommits > 0
-                  const hasPrs = detail?.pullRequests?.length > 0
-                  const hasIssues = detail?.issues?.length > 0
-                  const hasTracked = dayTrackedItems.length > 0
-
-                  if (!hasCommits && !hasPrs && !hasIssues && !hasTracked) {
-                    if (selectedDay.contributionCount > 0) {
-                      return (
-                        <div className="relative pl-6 sm:pl-8">
-                          <div className="rounded-xl border border-[#2D6A4F]/20 bg-white/70 p-6 text-center shadow-sm">
-                            <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#2D6A4F]/10 text-lg">
-                              🌿
-                            </div>
-                            <h3 className="font-semibold text-[#1A1A18]">
-                              {selectedDay.contributionCount} GitHub contribution{selectedDay.contributionCount !== 1 ? 's' : ''} on {formatFullDate(selectedDay.date)}
-                            </h3>
-                            <p className="mt-1 text-xs text-[#1A1A18]/55">
-                              Recorded in your GitHub contribution calendar for this date.
-                            </p>
-                            <a
-                              href={`https://github.com/${githubUsername}?tab=overview&from=${selectedDay.date}&to=${selectedDay.date}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[#2D6A4F] px-4 py-2 text-xs font-semibold text-[#F7F5F0] transition hover:bg-[#24583F]"
-                            >
-                              View on GitHub ↗
-                            </a>
-                          </div>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div className="rounded-xl border border-[#1A1A18]/10 bg-white/40 p-6 text-center text-sm font-medium text-[#1A1A18]/50">
-                        No contributions recorded on {formatFullDate(selectedDay.date)}. Click another square on the heatmap.
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/45">
+                        Experience Tier
+                      </span>
+                      <div className="mt-1 flex items-center justify-between rounded-xl border border-[#2D6A4F]/20 bg-[#2D6A4F]/5 px-3 py-2">
+                        <span className="text-xs font-bold capitalize text-[#2D6A4F]">
+                          {level}
+                        </span>
+                        <span className="text-[11px] text-[#1A1A18]/50">
+                          {level === 'beginner' && 'Getting Started'}
+                          {level === 'intermediate' && 'Feature Contributor'}
+                          {level === 'advanced' && 'Module Architect'}
+                        </span>
                       </div>
-                    )
-                  }
+                    </div>
 
-                  return (
-                    <div className="space-y-5">
-                      {hasCommits && (
-                        <GithubCommitBlock
-                          totalCommits={detail.totalCommits}
-                          repos={detail.commitRepos}
-                          isDayView={true}
-                        />
-                      )}
-                      {hasPrs && (
-                        <GithubPrBlock pullRequests={detail.pullRequests} />
-                      )}
-                      {hasIssues && (
-                        <GithubIssueBlock issues={detail.issues} />
-                      )}
-                      {hasTracked && (
-                        <TrackedActivityBlock items={dayTrackedItems} />
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/45">
+                          Active Tech Stack
+                        </span>
+                        <span className="rounded-full bg-[#2D6A4F]/10 px-2 py-0.5 text-[10px] font-bold text-[#2D6A4F]">
+                          {stack.length}
+                        </span>
+                      </div>
+                      {stack.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {stack.map(tech => (
+                            <span
+                              key={tech}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[#1A1A18]/10 bg-white px-2 py-0.5 text-[11px] font-semibold text-[#1A1A18]/80 shadow-2xs"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#2D6A4F]" />
+                              {tech}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-[#1A1A18]/40 italic">No technologies configured yet.</p>
                       )}
                     </div>
-                  )
-                })()
-              )}
-            </div>
-          ) : (
-            /* ============================================================ */
-            /* MONTHLY OVERVIEW TIMELINE (DEFAULT)                          */
-            /* ============================================================ */
-            <div className="space-y-8">
-              {heatmap?.monthlyActivity && heatmap.monthlyActivity.length > 0 ? (
-                heatmap.monthlyActivity.map((month) => {
-                  const monthTrackedItems = contributions.filter(c => {
-                    const d = (c.date || c.createdAt || '').slice(0, 7)
-                    return d === month.monthKey
-                  })
-                  const hasCommits = month.commitRepos?.length > 0 && month.totalCommits > 0
-                  const hasPrs = month.pullRequests?.length > 0
-                  const hasIssues = month.issues?.length > 0
-                  const hasTracked = monthTrackedItems.length > 0
 
-                  if (!hasCommits && !hasPrs && !hasIssues && !hasTracked) return null
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('settings')}
+                        className="w-full flex items-center justify-between rounded-xl border border-[#1A1A18]/15 bg-white px-3.5 py-2 text-xs font-bold text-[#1A1A18]/75 shadow-xs transition hover:border-[#2D6A4F] hover:text-[#2D6A4F]"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Settings className="h-3.5 w-3.5" />
+                          <span>Customize Stack & Profile</span>
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-                  return (
-                    <div key={month.monthKey}>
-                      <div className="mb-4 flex items-center gap-4">
-                        <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
-                          {month.monthLabel}
-                        </h3>
-                        <div className="h-px flex-1 bg-[#1A1A18]/10" />
+                {/* GitHub Sync Status Card */}
+                <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-5 shadow-sm backdrop-blur-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#1A1A18]/8 text-[#1A1A18]">
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                          <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                        </svg>
                       </div>
+                      <h3 className="text-sm font-bold text-[#1A1A18]">GitHub Connection</h3>
+                    </div>
+                    {githubUsername && (
+                      <span className="flex h-2 w-2 rounded-full bg-[#2D6A4F] animate-pulse" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#1A1A18]/55 mb-3 leading-relaxed">
+                    {githubUsername
+                      ? `Syncing verified activity from @${githubUsername}.`
+                      : 'Connect your GitHub handle in settings to track activity.'}
+                  </p>
+                  {githubUsername ? (
+                    <button
+                      type="button"
+                      onClick={() => fetchHeatmap(githubUsername)}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#1A1A18]/70 shadow-2xs transition hover:border-[#2D6A4F] hover:text-[#2D6A4F]"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Sync Live Heatmap</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('settings')}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#2D6A4F] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#24583F]"
+                    >
+                      <span>Connect GitHub</span>
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                      <div className="relative pl-5 sm:pl-7">
-                        {/* Continuous vertical timeline bar */}
-                        <div className="absolute left-2.5 sm:left-3.5 top-0 bottom-0 w-0.5 bg-[#1A1A18]/15" />
+              {/* Right Column (Col 7): Stack DNA Skill Topology Radar Card */}
+              <div className="lg:col-span-7">
+                <StackDnaRadarCard
+                  user={{ ...initialUser, username, stack, experienceLevel: level, githubUsername }}
+                  onNavigateToSettings={() => setActiveTab('settings')}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
 
+        {/* ================================================================ */}
+        {/* VIEW 2: CONTRIBUTIONS & HEATMAP WORKSPACE                         */}
+        {/* ================================================================ */}
+        {activeTab === 'contributions' && (
+          <motion.div
+            key="contributions-tab"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-5"
+          >
+            {/* Full-Width GitHub Contribution Calendar */}
+            <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-5 shadow-sm backdrop-blur-xl">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                      <Calendar className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h2 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
+                        Contribution Calendar
+                      </h2>
+                      <p className="text-xs text-[#1A1A18]/50">
+                        {githubUsername
+                          ? `Interactive annual history from @${githubUsername}`
+                          : 'Add your GitHub username in settings to view your contribution heatmap'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {githubUsername && (
+                    <button
+                      type="button"
+                      onClick={() => fetchHeatmap(githubUsername)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white px-3 py-1.5 text-xs font-semibold text-[#1A1A18]/65 shadow-2xs transition hover:border-[#2D6A4F] hover:text-[#2D6A4F]"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Refresh</span>
+                    </button>
+                  )}
+                </div>
+
+                {!githubUsername && (
+                  <div className="py-12 text-center rounded-2xl border border-dashed border-[#1A1A18]/15 bg-white/40 my-2">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                      <Sparkles className="h-6 w-6" />
+                    </div>
+                    <p className="text-sm font-semibold text-[#1A1A18]">No GitHub Account Linked</p>
+                    <p className="mt-1 text-xs text-[#1A1A18]/50 max-w-sm mx-auto">
+                      Add your GitHub username in the Studio tab to see your verified contributions, commits, and activity stream.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('settings')}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#2D6A4F] px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#24583F]"
+                    >
+                      <span>Open Settings</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {githubUsername && heatLoading && (
+                  <div className="space-y-3 py-8">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="h-4 w-full animate-pulse rounded bg-[#1A1A18]/8" />
+                    ))}
+                    <p className="mt-3 text-center text-xs font-medium text-[#1A1A18]/45">
+                      Syncing verified GitHub activity…
+                    </p>
+                  </div>
+                )}
+
+                {githubUsername && heatError && !heatLoading && (
+                  <p className="rounded-2xl border border-red-700/20 bg-red-700/10 px-4 py-3 text-xs font-medium text-red-800">
+                    {heatError}
+                  </p>
+                )}
+
+                {heatmap && !heatLoading && (
+                  <ContributionHeatmap
+                    days={heatmap.days}
+                    total={heatmap.totalContributions}
+                    selectedDay={selectedDay}
+                    onSelectDay={setSelectedDay}
+                  />
+                )}
+              </div>
+
+            {/* Selected Day Inspector Block (or Prompt) */}
+            <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-6 shadow-sm backdrop-blur-xl">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#1A1A18]/8">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                    <Activity className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="[font-family:Georgia,serif] text-base font-bold text-[#1A1A18]">
+                      {selectedDay ? `Activity for ${formatFullDate(selectedDay.date)}` : 'Interactive Day Inspector'}
+                    </h3>
+                    <p className="text-xs text-[#1A1A18]/50">
+                      {selectedDay
+                        ? `${selectedDay.contributionCount} verified contribution${selectedDay.contributionCount !== 1 ? 's' : ''}`
+                        : 'Select any cell on the calendar to view its granular commits and pull requests'}
+                    </p>
+                  </div>
+                </div>
+
+                {selectedDay && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDay(null)}
+                    className="rounded-xl border border-[#2D6A4F]/30 bg-white px-3 py-1.5 text-xs font-bold text-[#2D6A4F] shadow-sm transition hover:bg-[#2D6A4F]/10"
+                  >
+                    Clear Selection ✕
+                  </button>
+                )}
+              </div>
+
+              {selectedDay ? (
+                /* SINGLE DAY SELECTED VIEW */
+                <div className="relative pl-5 sm:pl-7">
+                  <div className="absolute left-2.5 sm:left-3.5 top-0 bottom-0 w-0.5 bg-[#1A1A18]/15" />
+
+                  {dayLoading ? (
+                    <div className="py-10 text-center">
+                      <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#2D6A4F] border-t-transparent" />
+                      <p className="mt-3 text-xs font-medium text-[#1A1A18]/60">Fetching verified GitHub day activity…</p>
+                    </div>
+                  ) : (
+                    (() => {
+                      const detail = dayDetail || heatmap?.dailyActivity?.[selectedDay.date]
+                      const hasCommits = detail?.commitRepos?.length > 0 && detail.totalCommits > 0
+                      const hasPrs = detail?.pullRequests?.length > 0
+                      const hasIssues = detail?.issues?.length > 0
+                      const hasTracked = dayTrackedItems.length > 0
+
+                      if (!hasCommits && !hasPrs && !hasIssues && !hasTracked) {
+                        if (selectedDay.contributionCount > 0) {
+                          return (
+                            <div className="relative pl-6 sm:pl-8">
+                              <div className="rounded-2xl border border-[#2D6A4F]/20 bg-white/70 p-6 text-center shadow-sm">
+                                <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                                  <Sparkles className="h-5 w-5" />
+                                </div>
+                                <h3 className="font-semibold text-[#1A1A18]">
+                                  {selectedDay.contributionCount} GitHub contribution{selectedDay.contributionCount !== 1 ? 's' : ''} on {formatFullDate(selectedDay.date)}
+                                </h3>
+                                <p className="mt-1 text-xs text-[#1A1A18]/55">
+                                  Recorded in your GitHub contribution calendar for this date.
+                                </p>
+                                <a
+                                  href={`https://github.com/${githubUsername}?tab=overview&from=${selectedDay.date}&to=${selectedDay.date}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[#2D6A4F] px-4 py-2 text-xs font-semibold text-[#F7F5F0] transition hover:bg-[#24583F]"
+                                >
+                                  View on GitHub ↗
+                                </a>
+                              </div>
+                            </div>
+                          )
+                        }
+                        return (
+                          <div className="rounded-2xl border border-[#1A1A18]/10 bg-white/40 p-6 text-center text-sm font-medium text-[#1A1A18]/50">
+                            No contributions recorded on {formatFullDate(selectedDay.date)}. Click another square on the heatmap.
+                          </div>
+                        )
+                      }
+
+                      return (
                         <div className="space-y-5">
                           {hasCommits && (
                             <GithubCommitBlock
-                              totalCommits={month.totalCommits}
-                              repos={month.commitRepos}
+                              totalCommits={detail.totalCommits}
+                              repos={detail.commitRepos}
+                              isDayView={true}
                             />
                           )}
                           {hasPrs && (
-                            <GithubPrBlock pullRequests={month.pullRequests} />
+                            <GithubPrBlock pullRequests={detail.pullRequests} />
                           )}
                           {hasIssues && (
-                            <GithubIssueBlock issues={month.issues} />
+                            <GithubIssueBlock issues={detail.issues} />
                           )}
                           {hasTracked && (
-                            <TrackedActivityBlock items={monthTrackedItems} />
+                            <TrackedActivityBlock items={dayTrackedItems} />
                           )}
                         </div>
-                      </div>
-                    </div>
-                  )
-                })
-              ) : contributionSections.length > 0 ? (
-                /* Fallback to legacy contribution sections if monthlyActivity isn't present */
-                contributionSections.map(section => (
-                  <div key={section.monthKey}>
-                    <div className="mb-4 flex items-center gap-4">
-                      <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">{section.monthLabel}</h3>
-                      <div className="h-px flex-1 bg-[#1A1A18]/10" />
-                    </div>
-
-                    <div className="relative pl-5">
-                      <div className="absolute left-1 top-0 bottom-0 w-px bg-[#1A1A18]/15" />
-                      <div className="space-y-5">
-                        {section.items.map((group) => (
-                          <div key={group.key} className="relative">
-                            <div className="absolute -left-5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#2B3137] text-[13px] text-white shadow-sm">
-                              {getGithubGroupIcon(group)}
-                            </div>
-
-                            <div className="flex items-start gap-4 rounded-2xl border border-[#1A1A18]/8 bg-white/55 px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-base font-semibold text-[#1A1A18]">{getGithubGroupTitle(group)}</p>
-                                {getGithubRecentChange(group) && (
-                                  <p className="mt-1 text-sm text-[#1A1A18]/55">{getGithubRecentChange(group)}</p>
-                                )}
-                                <div className="mt-2 space-y-1.5">
-                                  {Array.from(group.repoNames).slice(0, 4).map(repo => (
-                                    <div key={repo} className="flex items-center gap-2 text-sm text-[#1A1A18]/65">
-                                      <span className="text-[#1A1A18]/35">⌂</span>
-                                      <span className="truncate font-medium">{repo}</span>
-                                    </div>
-                                  ))}
-                                  {group.repoNames.size > 4 && (
-                                    <p className="text-xs font-medium text-[#1A1A18]/45">+{group.repoNames.size - 4} more repositories</p>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="flex shrink-0 flex-col items-end gap-2">
-                                {group.pullRequestUrl && (
-                                  <a href={group.pullRequestUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#2D6A4F] underline underline-offset-4 transition hover:text-[#24583F]">
-                                    {group.type === 'pull_request' ? 'View PR ↗' : group.type === 'issue' ? 'View Issue ↗' : 'View on GitHub ↗'}
-                                  </a>
-                                )}
-                                <span className="rounded-full bg-[#1A1A18]/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/55">
-                                  {group.source === 'github' ? 'GitHub' : 'Tracked'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))
+                      )
+                    })()
+                  )}
+                </div>
               ) : (
-                <div className="py-8 text-center">
-                  <p className="text-3xl">📋</p>
-                  <p className="mt-3 text-sm font-medium text-[#1A1A18]/50">No contributions tracked yet. Connect your GitHub account or start contributing.</p>
+                <div className="py-8 text-center rounded-2xl border border-dashed border-[#1A1A18]/15 bg-white/40">
+                  <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#1A1A18]/5 text-[#1A1A18]/40">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-[#1A1A18]">Interactive Day Inspection</p>
+                  <p className="mt-1 text-xs text-[#1A1A18]/50 max-w-sm mx-auto">
+                    Click any active green cell on the heatmap above to inspect individual commits, pull requests, and repository milestones for that date.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('activity')}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#1A1A18]/8 px-4 py-2 text-xs font-bold text-[#1A1A18] transition hover:bg-[#1A1A18]/15"
+                  >
+                    <span>Browse Full Activity Stream</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </motion.div>
+        )}
 
-        <div className="mt-6 flex justify-center pb-4">
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="h-11 rounded-md border border-[#1A1A18]/15 px-6 text-sm font-semibold text-[#1A1A18]/65 transition hover:border-red-700/30 hover:text-red-800"
+        {/* ================================================================ */}
+        {/* VIEW 3: FULL VERIFIED ACTIVITY STREAM                            */}
+        {/* ================================================================ */}
+        {activeTab === 'activity' && (
+          <motion.div
+            key="activity-tab"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-5"
           >
-            Sign out
-          </button>
-        </div>
+            {/* Full-Width Section: Contribution & Activity Stream */}
+            <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-5 shadow-sm backdrop-blur-xl">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                    <Activity className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h2 className="[font-family:Georgia,serif] text-xl font-bold text-[#1A1A18]">
+                      Verified Activity Stream
+                    </h2>
+                    <p className="text-xs text-[#1A1A18]/50">
+                      Chronological timeline of commits, pull requests, issues, and tracked milestones across all repositories
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* MONTHLY OVERVIEW TIMELINE */}
+              <div className="space-y-8">
+                  {heatmap?.monthlyActivity && heatmap.monthlyActivity.length > 0 ? (
+                    heatmap.monthlyActivity.map((month) => {
+                      const monthTrackedItems = contributions.filter(c => {
+                        const d = (c.date || c.createdAt || '').slice(0, 7)
+                        return d === month.monthKey
+                      })
+                      const hasCommits = month.commitRepos?.length > 0 && month.totalCommits > 0
+                      const hasPrs = month.pullRequests?.length > 0
+                      const hasIssues = month.issues?.length > 0
+                      const hasTracked = monthTrackedItems.length > 0
+
+                      if (!hasCommits && !hasPrs && !hasIssues && !hasTracked) return null
+
+                      return (
+                        <div key={month.monthKey}>
+                          <div className="mb-4 flex items-center gap-4">
+                            <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
+                              {month.monthLabel}
+                            </h3>
+                            <div className="h-px flex-1 bg-[#1A1A18]/10" />
+                          </div>
+
+                          <div className="relative pl-5 sm:pl-7">
+                            <div className="absolute left-2.5 sm:left-3.5 top-0 bottom-0 w-0.5 bg-[#1A1A18]/15" />
+
+                            <div className="space-y-5">
+                              {hasCommits && (
+                                <GithubCommitBlock
+                                  totalCommits={month.totalCommits}
+                                  repos={month.commitRepos}
+                                />
+                              )}
+                              {hasPrs && (
+                                <GithubPrBlock pullRequests={month.pullRequests} />
+                              )}
+                              {hasIssues && (
+                                <GithubIssueBlock issues={month.issues} />
+                              )}
+                              {hasTracked && (
+                                <TrackedActivityBlock items={monthTrackedItems} />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  ) : contributionSections.length > 0 ? (
+                    contributionSections.map(section => (
+                      <div key={section.monthKey}>
+                        <div className="mb-4 flex items-center gap-4">
+                          <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">{section.monthLabel}</h3>
+                          <div className="h-px flex-1 bg-[#1A1A18]/10" />
+                        </div>
+
+                        <div className="relative pl-5">
+                          <div className="absolute left-1 top-0 bottom-0 w-px bg-[#1A1A18]/15" />
+                          <div className="space-y-5">
+                            {section.items.map((group) => (
+                              <div key={group.key} className="relative">
+                                <div className="absolute -left-5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#2B3137] text-[13px] text-white shadow-sm">
+                                  {getGithubGroupIcon(group)}
+                                </div>
+
+                                <div className="flex items-start gap-4 rounded-2xl border border-[#1A1A18]/8 bg-white/60 px-4 py-4 shadow-2xs">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-base font-semibold text-[#1A1A18]">{getGithubGroupTitle(group)}</p>
+                                    {getGithubRecentChange(group) && (
+                                      <p className="mt-1 text-sm text-[#1A1A18]/55">{getGithubRecentChange(group)}</p>
+                                    )}
+                                    <div className="mt-2 space-y-1.5">
+                                      {Array.from(group.repoNames).slice(0, 4).map(repo => (
+                                        <div key={repo} className="flex items-center gap-2 text-sm text-[#1A1A18]/65">
+                                          <span className="text-[#1A1A18]/35">#</span>
+                                          <span className="truncate font-medium">{repo}</span>
+                                        </div>
+                                      ))}
+                                      {group.repoNames.size > 4 && (
+                                        <p className="text-xs font-medium text-[#1A1A18]/45">+{group.repoNames.size - 4} more repositories</p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex shrink-0 flex-col items-end gap-2">
+                                    {group.pullRequestUrl && (
+                                      <a href={group.pullRequestUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#2D6A4F] underline underline-offset-4 transition hover:text-[#24583F]">
+                                        {group.type === 'pull_request' ? 'View PR ↗' : group.type === 'issue' ? 'View Issue ↗' : 'View on GitHub ↗'}
+                                      </a>
+                                    )}
+                                    <span className="rounded-full bg-[#1A1A18]/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1A1A18]/55">
+                                      {group.source === 'github' ? 'GitHub' : 'Tracked'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-12 text-center rounded-2xl border border-dashed border-[#1A1A18]/15 bg-white/40">
+                      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[#1A1A18]/5 text-[#1A1A18]/40">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <p className="text-sm font-semibold text-[#1A1A18]">No activity recorded yet</p>
+                      <p className="mt-1 text-xs text-[#1A1A18]/50 max-w-sm mx-auto">
+                        Connect your GitHub account or start contributing to open source repositories to populate your stream.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+        {/* ================================================================ */}
+        {/* VIEW 2: PROFILE STUDIO & SETTINGS (21ST.DEV BENTO ARCHITECTURE) */}
+        {/* ================================================================ */}
+        {activeTab === 'settings' && (
+          <motion.div
+            key="settings-tab"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="[font-family:Georgia,serif] text-2xl font-bold tracking-tight text-[#1A1A18]">
+                  Developer Studio & Preferences
+                </h2>
+                <p className="text-xs text-[#1A1A18]/55">
+                  Configure your public identity, experience level, and preferred tech stack for tailored issue curation.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('overview')}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#1A1A18]/15 bg-white px-3.5 py-2 text-xs font-bold text-[#1A1A18]/70 shadow-2xs transition hover:border-[#2D6A4F] hover:text-[#2D6A4F]"
+              >
+                <span>View Portfolio</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="space-y-6">
+              {/* Gapless Bento Grid */}
+              <div className="grid gap-6 md:grid-cols-12">
+                {/* Card 1: Identity & Credentials (Col 7) */}
+                <div className="md:col-span-7 rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-6 shadow-sm backdrop-blur-xl">
+                  <div className="flex items-center gap-2 mb-5 pb-3 border-b border-[#1A1A18]/8">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-[#1A1A18]">Developer Identity</h3>
+                      <p className="text-[11px] text-[#1A1A18]/45">Public profile credentials and credentials</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-5">
+                    {/* Avatar Upload Dropzone */}
+                    <div className="flex items-center gap-4 p-3 rounded-2xl border border-[#1A1A18]/8 bg-white/60">
+                      <div className="relative h-16 w-16 overflow-hidden rounded-xl border-2 border-white bg-[#2D6A4F]/10 shadow-sm shrink-0">
+                        {avatar ? (
+                          <img
+                            src={avatar.startsWith('http') ? avatar : `${API_BASE_URL}${avatar}`}
+                            alt={username}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xl font-bold text-[#2D6A4F]">
+                            {initials}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-[#1A1A18]">Profile Picture</p>
+                        <p className="text-[11px] text-[#1A1A18]/45">PNG, JPG or WebP up to 5MB</p>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploadingAvatar}
+                          className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-bold text-[#2D6A4F] hover:underline"
+                        >
+                          {uploadingAvatar ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>Uploading…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Camera className="h-3 w-3" />
+                              <span>Change Photo</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[#1A1A18]/65">
+                        Display Name
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="pointer-events-none absolute left-3.5 text-[#1A1A18]/40">
+                          <User className="h-4 w-4" />
+                        </span>
+                        <input
+                          type="text"
+                          value={username}
+                          onChange={e => setUsername(e.target.value)}
+                          className="h-11 w-full rounded-2xl border border-[#1A1A18]/15 bg-white/90 pl-10 pr-4 text-sm font-medium text-[#1A1A18] shadow-2xs outline-none transition placeholder:text-[#1A1A18]/30 focus:border-[#2D6A4F] focus:ring-4 focus:ring-[#2D6A4F]/10"
+                          placeholder="Your full name or alias"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[#1A1A18]/65">
+                        GitHub Username
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="pointer-events-none absolute left-3.5 text-[#1A1A18]/45">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                          </svg>
+                        </span>
+                        <input
+                          type="text"
+                          value={githubUsername}
+                          onChange={e => setGithubUsername(e.target.value)}
+                          className="h-11 w-full rounded-2xl border border-[#1A1A18]/15 bg-white/90 pl-10 pr-4 text-sm font-medium text-[#1A1A18] shadow-2xs outline-none transition placeholder:text-[#1A1A18]/30 focus:border-[#2D6A4F] focus:ring-4 focus:ring-[#2D6A4F]/10"
+                          placeholder="e.g. torvalds"
+                        />
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-[#1A1A18]/45">
+                        Synchronizes your contribution heatmap, commit frequency, and verified pull requests.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 2: Experience Tier (Col 5) */}
+                <div className="md:col-span-5 rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-6 shadow-sm backdrop-blur-xl flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-5 pb-3 border-b border-[#1A1A18]/8">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                        <TrendingUp className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-[#1A1A18]">Experience Tier</h3>
+                        <p className="text-[11px] text-[#1A1A18]/45">Skill level for smart issue matching</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {[
+                        { id: 'beginner', title: 'Beginner', desc: 'Starting out with good first issues' },
+                        { id: 'intermediate', title: 'Intermediate', desc: 'Building features & reviewing PRs' },
+                        { id: 'advanced', title: 'Advanced', desc: 'Architecting scalable modules & tooling' },
+                      ].map(tier => {
+                        const isSelected = level === tier.id
+                        return (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            onClick={() => setLevel(tier.id)}
+                            className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-left transition-all duration-200 ${
+                              isSelected
+                                ? 'border-[#2D6A4F] bg-[#2D6A4F]/10 shadow-2xs ring-1 ring-[#2D6A4F]/30'
+                                : 'border-[#1A1A18]/10 bg-white/60 hover:bg-white hover:border-[#1A1A18]/25'
+                            }`}
+                          >
+                            <div>
+                              <p className={`text-xs font-bold ${isSelected ? 'text-[#2D6A4F]' : 'text-[#1A1A18]'}`}>
+                                {tier.title}
+                              </p>
+                              <p className="text-[11px] text-[#1A1A18]/50 mt-0.5">{tier.desc}</p>
+                            </div>
+                            <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'border-[#2D6A4F] bg-[#2D6A4F] text-white' : 'border-[#1A1A18]/20'
+                            }`}>
+                              {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Tech Ecosystem / Stack Grid (Full Width) */}
+              <div className="rounded-3xl border border-[#1A1A18]/10 bg-white/80 p-6 shadow-sm backdrop-blur-xl">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1A1A18]/8">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2D6A4F]/10 text-[#2D6A4F]">
+                      <Layers className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-[#1A1A18]">Tech Stack Matrix</h3>
+                      <p className="text-xs text-[#1A1A18]/50">Choose technologies to refine feed recommendations</p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#2D6A4F]/10 px-3 py-1 text-xs font-bold text-[#2D6A4F]">
+                    <Check className="h-3 w-3" />
+                    {stack.length} technologies selected
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {STACK_OPTIONS.map(tech => {
+                    const active = stack.includes(tech.toLowerCase())
+                    return (
+                      <motion.button
+                        key={tech}
+                        type="button"
+                        whileTap={{ scale: 0.94 }}
+                        onClick={() => toggleStack(tech)}
+                        className={`group flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold transition-all duration-200 ${
+                          active
+                            ? 'border-[#2D6A4F] bg-[#2D6A4F] text-white shadow-sm shadow-[#2D6A4F]/25'
+                            : 'border-[#1A1A18]/12 bg-white/80 text-[#1A1A18]/70 hover:border-[#2D6A4F]/40 hover:bg-white hover:text-[#1A1A18]'
+                        }`}
+                      >
+                        {active && <Check className="h-3 w-3 stroke-[3]" />}
+                        <span>{tech}</span>
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Toast notification */}
+              <AnimatePresence>
+                {saveMsg.text && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className={`flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-xs font-semibold shadow-sm ${
+                      saveMsg.type === 'success'
+                        ? 'border-[#2D6A4F]/25 bg-[#2D6A4F]/10 text-[#2D6A4F]'
+                        : 'border-red-700/20 bg-red-700/10 text-red-800'
+                    }`}
+                  >
+                    {saveMsg.type === 'success' ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2D6A4F]" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 shrink-0 text-red-800" />
+                    )}
+                    <span>{saveMsg.text}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Command Action Row */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                <div className="flex items-center gap-2 text-xs text-[#1A1A18]/50">
+                  <span className="h-2 w-2 rounded-full bg-[#2D6A4F]" />
+                  <span>Changes sync live across all recommendations and feeds</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <motion.button
+                    type="button"
+                    onClick={onSignOut}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="flex h-11 items-center justify-center gap-1.5 rounded-2xl border border-[#1A1A18]/15 bg-white px-5 text-xs font-bold text-[#1A1A18]/65 shadow-2xs transition hover:border-red-600/30 hover:bg-red-50/50 hover:text-red-700"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Sign Out</span>
+                  </motion.button>
+
+                  <motion.button
+                    type="submit"
+                    disabled={saving}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#2D6A4F] px-8 text-xs font-bold text-[#F7F5F0] shadow-md shadow-[#2D6A4F]/20 transition-all hover:bg-[#24583F] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-[#F7F5F0]" />
+                        <span>Saving…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Save Configuration</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+            </form>
+          </motion.div>
+        )}
 
       </section>
     </main>
