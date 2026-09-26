@@ -164,6 +164,7 @@ function AuthPage({ onLogin, onNavigate }) {
         if (!cancelled) {
           setIsGithubLoading(false)
           searchParams.delete('code')
+          searchParams.delete('iss')
           setSearchParams(searchParams, { replace: true })
         }
       }

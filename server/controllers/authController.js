@@ -125,23 +125,68 @@ export const githubOAuthLogin = async (req, res) => {
         let githubProfile = githubUserData;
 
         // If authorization code provided, exchange with GitHub OAuth API
-        if (code && process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+        if (code) {
+            const clientId = (process.env.GITHUB_CLIENT_ID || "").trim();
+            const clientSecret = (process.env.GITHUB_CLIENT_SECRET || "").trim();
+
+            if (!clientId || !clientSecret) {
+                console.error("Missing GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET on server.");
+                return res.status(500).json({
+                    error: "GitHub OAuth credentials are not configured on the server. Please add GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to the server environment variables.",
+                });
+            }
+
             const tokenResponse = await axios.post(
                 "https://github.com/login/oauth/access_token",
                 {
-                    client_id: process.env.GITHUB_CLIENT_ID,
-                    client_secret: process.env.GITHUB_CLIENT_SECRET,
+                    client_id: clientId,
+                    client_secret: clientSecret,
                     code,
                 },
-                { headers: { Accept: "application/json" } }
+                {
+                    headers: {
+                        Accept: "application/json",
+                        "User-Agent": "Qurate-App",
+                    },
+                }
             );
 
-            const accessToken = tokenResponse.data.access_token;
+            if (tokenResponse.data?.error) {
+                console.error("GitHub access token exchange error:", tokenResponse.data);
+                return res.status(400).json({
+                    error: tokenResponse.data.error_description || tokenResponse.data.error || "Failed to exchange GitHub authorization code.",
+                });
+            }
+
+            const accessToken = tokenResponse.data?.access_token;
             if (accessToken) {
                 const userResponse = await axios.get("https://api.github.com/user", {
-                    headers: { Authorization: `Bearer ${accessToken}` },
+                    headers: {
+                        Accept: "application/vnd.github.v3+json",
+                        Authorization: `Bearer ${accessToken}`,
+                        "User-Agent": "Qurate-App",
+                    },
                 });
                 githubProfile = userResponse.data;
+
+                // If user's public profile email is private, fetch primary verified email
+                if (!githubProfile.email) {
+                    try {
+                        const emailResponse = await axios.get("https://api.github.com/user/emails", {
+                            headers: {
+                                Accept: "application/vnd.github.v3+json",
+                                Authorization: `Bearer ${accessToken}`,
+                                "User-Agent": "Qurate-App",
+                            },
+                        });
+                        const primaryEmailObj = emailResponse.data?.find((e) => e.primary && e.verified) || emailResponse.data?.[0];
+                        if (primaryEmailObj?.email) {
+                            githubProfile.email = primaryEmailObj.email;
+                        }
+                    } catch {
+                        // ignore and use login-based fallback
+                    }
+                }
             }
         }
 
