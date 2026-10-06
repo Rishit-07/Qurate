@@ -128,12 +128,17 @@ function AuthPage({ onLogin, onNavigate }) {
     return () => clearTimeout(timer)
   }, [customGithubUser, authTab])
 
+  const exchangedCodeRef = useRef(null)
+
   // Handle OAuth code exchange if redirected from GitHub
   useEffect(() => {
     const code = searchParams.get('code')
     if (!code) return
 
-    let cancelled = false
+    // Prevent duplicate token exchange in React 18/19 StrictMode or across renders
+    if (exchangedCodeRef.current === code) return
+    exchangedCodeRef.current = code
+
     async function exchangeOAuthCode() {
       setIsGithubLoading(true)
       setGithubError('')
@@ -141,39 +146,41 @@ function AuthPage({ onLogin, onNavigate }) {
         const res = await fetch(`${API_BASE_URL}/api/auth/github`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
+          body: JSON.stringify({
+            code,
+            redirectUri: `${window.location.origin}/auth`,
+          }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'GitHub authorization failed')
-        if (!cancelled) {
-          if (data.user?.githubUsername) {
-            saveRecentUser({
-              login: data.user.githubUsername,
-              name: data.user.username,
-              avatar_url: data.user.avatar,
-            })
-          }
-          onLogin(data.user, data.token)
+
+        if (data.user?.githubUsername) {
+          saveRecentUser({
+            login: data.user.githubUsername,
+            name: data.user.username,
+            avatar_url: data.user.avatar,
+          })
         }
+
+        // Clean query parameters from URL
+        searchParams.delete('code')
+        searchParams.delete('iss')
+        setSearchParams(searchParams, { replace: true })
+
+        onLogin(data.user, data.token)
       } catch (err) {
-        if (!cancelled) {
-          setGithubError(err.message || 'GitHub authorization failed')
-          setStatus({ type: 'error', message: err.message || 'GitHub authorization failed' })
-        }
+        setGithubError(err.message || 'GitHub authorization failed')
+        setStatus({ type: 'error', message: err.message || 'GitHub authorization failed' })
+        // Clean query parameters so user doesn't get stuck in a reload loop with a consumed code
+        searchParams.delete('code')
+        searchParams.delete('iss')
+        setSearchParams(searchParams, { replace: true })
       } finally {
-        if (!cancelled) {
-          setIsGithubLoading(false)
-          searchParams.delete('code')
-          searchParams.delete('iss')
-          setSearchParams(searchParams, { replace: true })
-        }
+        setIsGithubLoading(false)
       }
     }
 
     exchangeOAuthCode()
-    return () => {
-      cancelled = true
-    }
   }, [searchParams])
 
   function saveRecentUser(u) {
@@ -253,16 +260,15 @@ function AuthPage({ onLogin, onNavigate }) {
   // Handle "Continue with GitHub" button click
   function handleGithubButtonClick() {
     const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 
-    // On production deployment, perform native 1-click OAuth redirect
-    if (clientId && !isLocalhost) {
+    // If OAuth App client ID configured, initiate native 1-click OAuth redirect
+    if (clientId) {
       const redirectUri = encodeURIComponent(`${window.location.origin}/auth`)
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=read:user,user:email&redirect_uri=${redirectUri}`
       return
     }
 
-    // On localhost (or if no client ID), open the instant 1-click / live-search / PAT modal
+    // Otherwise, open the instant 1-click / live-search / PAT modal
     setGithubError('')
     setIsGithubModalOpen(true)
   }
@@ -397,6 +403,68 @@ function AuthPage({ onLogin, onNavigate }) {
           </div>
         </div>
       </nav>
+
+      {/* Full-screen loading overlay when authenticating with GitHub */}
+      {isGithubLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A18]/65 p-4 backdrop-blur-sm text-[#1A1A18]">
+          <div className="flex max-w-sm flex-col items-center gap-3.5 rounded-2xl border border-[#1A1A18]/15 bg-[#F7F5F0] p-7 text-center shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2D6A4F]/10 text-[#2D6A4F]">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+            <div>
+              <h3 className="[font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
+                Connecting to GitHub
+              </h3>
+              <p className="mt-1 text-xs text-[#1A1A18]/65 leading-relaxed">
+                Verifying authorization credentials and preparing your developer dashboard…
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prominent top notice banner if GitHub OAuth redirect encountered an error */}
+      {githubError && (
+        <div className="fixed top-20 inset-x-4 z-40 mx-auto max-w-lg rounded-2xl border border-red-700/20 bg-white p-4 shadow-xl text-left">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-red-900">GitHub Connection Notice</p>
+              <p className="mt-1 text-xs text-red-700 leading-relaxed">{githubError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGithubError('')}
+              className="rounded-lg p-1 text-red-500 hover:bg-red-50 hover:text-red-800 transition"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setGithubError('')
+                setIsGithubModalOpen(true)
+              }}
+              className="rounded-xl bg-[#2D6A4F] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#24583F] shadow-2xs transition"
+            >
+              Sign in with 1-Click Profile Search
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGithubError('')
+                const el = document.getElementById('auth')
+                el?.scrollIntoView({ behavior: 'smooth' })
+              }}
+              className="rounded-xl border border-[#1A1A18]/15 px-3 py-1.5 text-xs font-semibold text-[#1A1A18]/70 hover:bg-[#1A1A18]/5 transition"
+            >
+              Use Email
+            </button>
+          </div>
+        </div>
+      )}
 
       <section
         id="top"
@@ -632,6 +700,17 @@ function AuthPage({ onLogin, onNavigate }) {
                 </svg>
               )}
               {isGithubLoading ? 'Connecting to GitHub...' : 'Continue with GitHub'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setGithubError('')
+                setIsGithubModalOpen(true)
+              }}
+              className="w-full text-center text-xs font-semibold text-[#2D6A4F] hover:underline pt-0.5 transition"
+            >
+              Or sign in with 1-click profile search / PAT
             </button>
 
             {githubError && (

@@ -120,7 +120,7 @@ export const login = async (req, res) => {
  */
 export const githubOAuthLogin = async (req, res) => {
     try {
-        const { code, githubUserData, githubUsername } = req.body;
+        const { code, redirectUri, redirect_uri, githubUserData, githubUsername } = req.body;
 
         let githubProfile = githubUserData;
 
@@ -136,20 +136,53 @@ export const githubOAuthLogin = async (req, res) => {
                 });
             }
 
-            const tokenResponse = await axios.post(
-                "https://github.com/login/oauth/access_token",
-                {
-                    client_id: clientId,
-                    client_secret: clientSecret,
-                    code,
-                },
-                {
-                    headers: {
-                        Accept: "application/json",
-                        "User-Agent": "Qurate-App",
-                    },
+            const tokenPayload = {
+                client_id: clientId,
+                client_secret: clientSecret,
+                code,
+            };
+            const effectiveRedirectUri = redirectUri || redirect_uri;
+            if (effectiveRedirectUri) {
+                tokenPayload.redirect_uri = effectiveRedirectUri;
+            }
+
+            let tokenResponse;
+            try {
+                tokenResponse = await axios.post(
+                    "https://github.com/login/oauth/access_token",
+                    tokenPayload,
+                    {
+                        headers: {
+                            Accept: "application/json",
+                            "User-Agent": "Qurate-App",
+                        },
+                    }
+                );
+            } catch (postErr) {
+                console.error("Failed to connect to GitHub access_token endpoint:", postErr.message);
+                return res.status(502).json({
+                    error: "Failed to communicate with GitHub OAuth service. Please try again.",
+                });
+            }
+
+            // Fallback retry without redirect_uri if GitHub returned redirect_uri_mismatch
+            if (tokenResponse?.data?.error === "redirect_uri_mismatch" && tokenPayload.redirect_uri) {
+                try {
+                    delete tokenPayload.redirect_uri;
+                    tokenResponse = await axios.post(
+                        "https://github.com/login/oauth/access_token",
+                        tokenPayload,
+                        {
+                            headers: {
+                                Accept: "application/json",
+                                "User-Agent": "Qurate-App",
+                            },
+                        }
+                    );
+                } catch {
+                    // keep original response
                 }
-            );
+            }
 
             if (tokenResponse.data?.error) {
                 console.error("GitHub access token exchange error:", tokenResponse.data);
@@ -253,9 +286,19 @@ export const githubOAuthLogin = async (req, res) => {
                 role: "user",
             });
             await user.save();
-        } else if (!user.avatar && githubProfile.avatar_url) {
-            user.avatar = githubProfile.avatar_url;
-            await user.save();
+        } else {
+            let modified = false;
+            if (!user.githubUsername) {
+                user.githubUsername = githubProfile.login;
+                modified = true;
+            }
+            if (!user.avatar && githubProfile.avatar_url) {
+                user.avatar = githubProfile.avatar_url;
+                modified = true;
+            }
+            if (modified) {
+                await user.save();
+            }
         }
 
         const token = jwt.sign(
