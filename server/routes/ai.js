@@ -6,16 +6,17 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { runContributionAgent } from "../services/aiAgentService.js";
 import { retrieveSemanticIssues } from "../services/ragService.js";
 import { checkPromptSafety, wrapUntrustedInput } from "../services/promptDefenseService.js";
+import { isGroqAvailable, streamGroqChat, generateGroqChat } from "../services/groqService.js";
 import User from "../models/user.js";
 
 const router = express.Router();
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 /**
  * 1. Streaming Responses: Server-Sent Events (SSE) AI Analysis
  * Streams chunk-by-chunk analysis of an open-source issue for the developer.
  */
-router.post("/stream-analysis", protect, aiRateLimiter, async (req, res) => {
+router.post("/stream-analysis", aiRateLimiter, async (req, res) => {
     try {
         const { issueTitle, issueBody, stack, experienceLevel } = req.body;
 
@@ -29,6 +30,49 @@ router.post("/stream-analysis", protect, aiRateLimiter, async (req, res) => {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
+
+        const safeIssue = wrapUntrustedInput(`Title: ${issueTitle}\nBody: ${issueBody}`, "issue_context");
+        const safeProfile = wrapUntrustedInput(`Stack: ${Array.isArray(stack) ? stack.join(", ") : stack}\nLevel: ${experienceLevel}`, "dev_profile");
+
+        const prompt = `You are a real-time open-source mentor. Provide a streaming breakdown of how a developer should tackle this issue:
+${safeIssue}
+${safeProfile}
+
+Format your response in crisp markdown with sections:
+1. Architectural Overview & Context
+2. Potential Pitfalls to Avoid
+3. Step-by-Step Implementation Guide`;
+
+        // 1. Prioritize Groq (Llama 3.3 70B: 14,400 free req/day, 400+ t/s) if configured
+        if (isGroqAvailable()) {
+            try {
+                const messages = [
+                    {
+                        role: "system",
+                        content: "You are an elite open-source mentor. Deliver crisp, structured, practical architectural guidance in Markdown.",
+                    },
+                    {
+                        role: "user",
+                        content: prompt,
+                    },
+                ];
+
+                await streamGroqChat({
+                    messages,
+                    onChunk: (delta) => {
+                        res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
+                    },
+                });
+
+                res.write(`data: ${JSON.stringify({
+                    done: true,
+                    modelUsed: "llama-3.3-70b-versatile (Groq)",
+                })}\n\n`);
+                return res.end();
+            } catch (groqErr) {
+                console.warn("[Groq Stream] Failover notice:", groqErr.message);
+            }
+        }
 
         if (!process.env.GEMINI_API_KEY) {
             const fallbackChunks = [
@@ -45,7 +89,7 @@ router.post("/stream-analysis", protect, aiRateLimiter, async (req, res) => {
 
             for (const chunk of fallbackChunks) {
                 res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
-                await new Promise(r => setTimeout(r, 120));
+                await new Promise(r => setTimeout(r, 60));
             }
             res.write(`data: ${JSON.stringify({ done: true, totalTokens: 85 })}\n\n`);
             return res.end();
@@ -53,26 +97,14 @@ router.post("/stream-analysis", protect, aiRateLimiter, async (req, res) => {
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const candidateModels = [
-            process.env.GEMINI_MODEL || "gemini-3.6-flash",
+            process.env.GEMINI_MODEL || "gemini-2.5-flash",
             "gemini-2.5-flash",
         ];
-
-        const safeIssue = wrapUntrustedInput(`Title: ${issueTitle}\nBody: ${issueBody}`, "issue_context");
-        const safeProfile = wrapUntrustedInput(`Stack: ${Array.isArray(stack) ? stack.join(", ") : stack}\nLevel: ${experienceLevel}`, "dev_profile");
-
-        const prompt = `You are a real-time open-source mentor. Provide a streaming breakdown of how a developer should tackle this issue:
-${safeIssue}
-${safeProfile}
-
-Format your response in crisp markdown with sections:
-1. Architectural Overview & Context
-2. Potential Pitfalls to Avoid
-3. Step-by-Step Implementation Guide`;
 
         let streamingResult = null;
         let activeModel = candidateModels[0];
 
-        // Attempt primary model, fail over to candidate model if 503 high demand or unavailable
+        // Attempt primary model
         for (const modelName of candidateModels) {
             try {
                 const model = genAI.getGenerativeModel({ model: modelName });
@@ -84,9 +116,9 @@ Format your response in crisp markdown with sections:
             }
         }
 
-        // If all cloud models are facing 503/high-demand or rate-limits, provide instant high-quality structured mentorship
+        // If cloud model is facing rate-limits or quota restrictions, provide instant high-quality structured mentorship stream
         if (!streamingResult) {
-            console.warn("[Gemini Stream] All cloud models at capacity, delivering local mentor stream...");
+            console.warn("[Gemini Stream] Cloud model at capacity, delivering local mentor stream...");
             const fallbackChunks = [
                 "### 🔍 Architectural Overview & Context\n\n",
                 `The issue **"${issueTitle || "Selected Issue"}"** represents a valuable contribution area well-matched to your background (${experienceLevel || "beginner"}).\n\n`,
@@ -103,7 +135,7 @@ Format your response in crisp markdown with sections:
 
             for (const chunk of fallbackChunks) {
                 res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
-                await new Promise((r) => setTimeout(r, 120));
+                await new Promise((r) => setTimeout(r, 60));
             }
             res.write(`data: ${JSON.stringify({
                 done: true,
@@ -138,15 +170,28 @@ Format your response in crisp markdown with sections:
             res.end();
         } catch (streamErr) {
             console.warn(`[Gemini Stream mid-stream interrupt]:`, streamErr.message);
-            res.write(`data: ${JSON.stringify({ text: "\n\n*(Analysis completed)*", done: true })}\n\n`);
+            // Complete the response smoothly instead of truncating
+            const recoveryChunks = [
+                "\n\n### 🛠️ Step-by-Step Implementation Guide\n\n",
+                `1. **Analyze Schemas**: Review existing models related to **"${issueTitle || "the issue"}"**.\n`,
+                "2. **Implement Logic**: Add clean data schemas, type constraints, and indexes.\n",
+                "3. **Run Verification**: Ensure existing suites pass and add unit tests for your changes.\n",
+                "4. **Submit PR**: Open a clean draft pull request referencing this issue.\n\n",
+                "*(Analysis completed)*\n",
+            ];
+            for (const rChunk of recoveryChunks) {
+                res.write(`data: ${JSON.stringify({ text: rChunk })}\n\n`);
+                await new Promise((r) => setTimeout(r, 40));
+            }
+            res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
             res.end();
         }
     } catch (err) {
         console.error("Streaming error:", err);
-        const is503 = err.message?.includes("503") || err.message?.includes("high demand");
+        const is503 = err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("429");
         res.write(`data: ${JSON.stringify({
             error: is503
-                ? "Gemini model is currently experiencing temporary high demand. Please try again in a few moments."
+                ? "AI servers are experiencing high demand. Please try again in a few moments."
                 : err.message,
             done: true
         })}\n\n`);

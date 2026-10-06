@@ -26,8 +26,33 @@ function DiscoveryFeed({
 
   const preferredStack = useMemo(() => {
     if (user?.stack?.length) return user.stack
-    return ['react', 'node.js']
+    return ['React', 'Node.js']
   }, [user])
+
+  function buildFeedQuery(page, filter) {
+    const params = new URLSearchParams()
+    params.set('page', String(page))
+    params.set('limit', String(ISSUES_PER_PAGE))
+
+    const userStackStr = (user?.stack || []).join(',')
+    if (userStackStr) {
+      params.set('userStack', userStackStr)
+    }
+    if (user?.experienceLevel) {
+      params.set('userLevel', user.experienceLevel)
+    }
+
+    const normalized = normalizeFilterValue(filter)
+    if (normalized && normalized !== 'all') {
+      if (['beginner', 'intermediate', 'advanced'].includes(normalized)) {
+        params.set('complexity', normalized)
+      } else {
+        params.set('stack', filter)
+      }
+    }
+
+    return params.toString()
+  }
 
   const filteredIssues = useMemo(() => {
     if (activeFilter === 'All') return issues
@@ -36,29 +61,25 @@ function DiscoveryFeed({
   }, [activeFilter, issues])
 
   const availableFilterOptions = useMemo(() => {
-    const difficulties = ['Beginner', 'Intermediate', 'Advanced'].filter(
-      (difficulty) =>
-        issues.some((issue) => issue.complexity === difficulty.toLowerCase()),
-    )
-    const stacks = new Map()
+    const difficulties = ['Beginner', 'Intermediate', 'Advanced']
+    const popularStacks = ['Python', 'JavaScript', 'TypeScript', 'React', 'Node.js', 'Go', 'Rust']
 
+    // Include user's preferred stacks first
+    const userStacks = (user?.stack || []).map((s) => formatFilterLabel(s)).filter(Boolean)
+
+    // Collect any other stacks from currently loaded issues
+    const seenStacks = new Set()
     issues.forEach((issue) => {
-      ;(issue.stacks || []).forEach((stack) => {
-        const normalized = normalizeFilterValue(stack)
-        stacks.set(normalized, formatFilterLabel(stack))
-      })
-
-      if (issue.repo?.language) {
-        const normalizedLanguage = normalizeFilterValue(issue.repo.language)
-        stacks.set(
-          normalizedLanguage,
-          formatFilterLabel(issue.repo.language),
-        )
-      }
+      ;(issue.stacks || []).forEach((st) => seenStacks.add(formatFilterLabel(st)))
+      if (issue.repo?.language) seenStacks.add(formatFilterLabel(issue.repo.language))
     })
 
-    return ['All', ...difficulties, ...stacks.values()]
-  }, [issues])
+    const combinedStacks = Array.from(
+      new Set([...userStacks, ...popularStacks, ...seenStacks])
+    ).filter(Boolean)
+
+    return ['All', ...difficulties, ...combinedStacks]
+  }, [user, issues])
 
   const totalPages = Math.max(
     1,
@@ -72,43 +93,51 @@ function DiscoveryFeed({
   }, [safeCurrentPage, filteredIssues])
 
   function selectPresetFilter(filter) {
+    if (filter === activeFilter) return
     setActiveFilter(filter)
     setCurrentPage(1)
+    setMaxFetchedPage(1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   useEffect(() => {
     const controller = new AbortController()
+    let isCancelled = false
     const PREFETCH_PAGES = 2 // number of extra pages to prefetch in background
 
     async function fetchPage(page) {
-      if (!page || page < 1) return []
+      if (!page || page < 1) return { issues: [], total: 0 }
       try {
-        const res = await fetch(`${API_BASE_URL}/api/issues?page=${page}`, {
+        const query = buildFeedQuery(page, activeFilter)
+        const res = await fetch(`${API_BASE_URL}/api/issues?${query}`, {
           signal: controller.signal,
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Could not load issues')
         return data
-      } catch {
-        return { issues: [] }
+      } catch (err) {
+        if (err.name === 'AbortError') throw err
+        return { issues: [], total: 0 }
       }
     }
 
     async function fetchIssues() {
       setFeedStatus((current) => ({ ...current, loading: true, error: '' }))
+      setCurrentPage(1)
+      setMaxFetchedPage(1)
 
       try {
         // Fetch first page and render immediately
         const firstData = await fetchPage(1)
+        if (isCancelled) return
 
         const allIssues = [...(firstData.issues || [])]
-        const total = firstData.total || allIssues.length
+        const total = typeof firstData.total === 'number' ? firstData.total : allIssues.length
         setIssues(allIssues)
         setFeedStatus({ loading: false, error: '', total })
         setMaxFetchedPage(1)
 
-        // Prefetch a limited number of additional pages in background
+        // Prefetch background pages for smooth scrolling
         const pageSize = ISSUES_PER_PAGE
         const totalPages = Math.max(1, Math.ceil(total / pageSize))
         const lastPrefetchPage = Math.min(totalPages, 1 + PREFETCH_PAGES)
@@ -118,8 +147,13 @@ function DiscoveryFeed({
           for (let p = 2; p <= lastPrefetchPage; p++) {
             promises.push(
               fetchPage(p).then((d) => {
+                if (isCancelled) return
                 if (d?.issues?.length) {
-                  setIssues((prev) => [...prev, ...d.issues])
+                  setIssues((prev) => {
+                    const seen = new Set(prev.map(getIssueId))
+                    const uniqueNew = d.issues.filter((it) => !seen.has(getIssueId(it)))
+                    return [...prev, ...uniqueNew]
+                  })
                   setMaxFetchedPage((prevPage) => Math.max(prevPage, p))
                 }
               }),
@@ -129,7 +163,7 @@ function DiscoveryFeed({
           Promise.all(promises).catch(() => {})
         }
       } catch (error) {
-        if (error.name !== 'AbortError') {
+        if (error.name !== 'AbortError' && !isCancelled) {
           setFeedStatus({
             loading: false,
             error:
@@ -143,8 +177,11 @@ function DiscoveryFeed({
 
     fetchIssues()
 
-    return () => controller.abort()
-  }, [])
+    return () => {
+      isCancelled = true
+      controller.abort()
+    }
+  }, [activeFilter, user?.stack, user?.experienceLevel])
 
   // IntersectionObserver to implement scroll pagination (loads next page when sentinel visible)
   useEffect(() => {
@@ -162,12 +199,16 @@ function DiscoveryFeed({
 
           isFetchingRef.current = true
 
-          // fetch next page and append
-          fetch(`${API_BASE_URL}/api/issues?page=${nextPage}`)
+          const query = buildFeedQuery(nextPage, activeFilter)
+          fetch(`${API_BASE_URL}/api/issues?${query}`)
             .then((r) => r.json())
             .then((d) => {
               if (d?.issues?.length) {
-                setIssues((prev) => [...prev, ...d.issues])
+                setIssues((prev) => {
+                  const seen = new Set(prev.map(getIssueId))
+                  const uniqueNew = d.issues.filter((it) => !seen.has(getIssueId(it)))
+                  return [...prev, ...uniqueNew]
+                })
                 setMaxFetchedPage((prev) => Math.max(prev, nextPage))
               }
             })
@@ -191,7 +232,7 @@ function DiscoveryFeed({
       if (el) observer.unobserve(el)
       observer.disconnect()
     }
-  }, [maxFetchedPage, feedStatus.total])
+  }, [maxFetchedPage, feedStatus.total, activeFilter, user?.stack, user?.experienceLevel])
 
   // Page change handler: if requested page isn't fetched yet, fetch it first
   async function handlePageChange(page) {
@@ -207,10 +248,15 @@ function DiscoveryFeed({
     // Otherwise fetch the required page and then navigate to it
     try {
       isFetchingRef.current = true
-      const res = await fetch(`${API_BASE_URL}/api/issues?page=${page}`)
+      const query = buildFeedQuery(page, activeFilter)
+      const res = await fetch(`${API_BASE_URL}/api/issues?${query}`)
       const data = await res.json()
       if (data?.issues?.length) {
-        setIssues((prev) => [...prev, ...data.issues])
+        setIssues((prev) => {
+          const seen = new Set(prev.map(getIssueId))
+          const uniqueNew = data.issues.filter((it) => !seen.has(getIssueId(it)))
+          return [...prev, ...uniqueNew]
+        })
         setMaxFetchedPage((prev) => Math.max(prev, page))
         setCurrentPage(page)
         window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -267,10 +313,10 @@ function DiscoveryFeed({
           </h1>
           <p className="mt-2 text-sm font-medium text-[#1A1A18]/70">
             {feedStatus.loading
-              ? 'Loading open-source issues across every level.'
-              : `${filteredIssues.length} of ${feedStatus.total} issues shown across all stacks. Your preference: ${formatStack(
-                  preferredStack,
-                )}.`}
+              ? 'Loading open-source issues across every level...'
+              : activeFilter === 'All'
+              ? `${filteredIssues.length} of ${feedStatus.total} issues shown (sorted for your stack & level). Your preference: ${formatStack(preferredStack)}.`
+              : `${filteredIssues.length} of ${feedStatus.total} issues found matching "${activeFilter}". Your preference: ${formatStack(preferredStack)}.`}
           </p>
         </header>
 
@@ -318,6 +364,7 @@ function DiscoveryFeed({
                 key={issue._id || issue.github_id}
                 issue={issue}
                 index={index}
+                user={user}
                 isBookmarked={bookmarks.some(
                   (bookmark) => getIssueId(bookmark) === getIssueId(issue),
                 )}
@@ -365,9 +412,9 @@ function DiscoveryFeed({
   )
 }
 
-function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi }) {
-  const score = getIssueScore(issue)
-  const muted = score <= 3
+function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi, user }) {
+  const { score, reason } = computeIssueFit(issue, user)
+  const muted = score <= 4
   const labels = issue.labels?.slice(0, 3) || []
   const language = issue.repo?.language || issue.stacks?.[0] || 'open source'
 
@@ -375,7 +422,7 @@ function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi }) {
     <article
       className={`feed-card rounded-lg border bg-white/55 px-5 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#2D6A4F] hover:bg-white/75 ${
         muted
-          ? 'border-[#1A1A18]/10 opacity-55'
+          ? 'border-[#1A1A18]/10 opacity-60'
           : 'border-[#2D6A4F]/80'
       }`}
       style={{ animationDelay: `${Math.min(index * 90, 450)}ms` }}
@@ -429,15 +476,19 @@ function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi }) {
         <span>AI fit</span>
         <div className="h-1.5 overflow-hidden rounded-full bg-[#2D6A4F]/10">
           <div
-            className="h-full rounded-full bg-[#2D6A4F]"
+            className={`h-full rounded-full ${
+              score >= 7 ? 'bg-[#2D6A4F]' : score >= 5 ? 'bg-amber-600' : 'bg-stone-400'
+            }`}
             style={{ width: `${score * 10}%` }}
           />
         </div>
-        <span className="text-[#2D6A4F]">{score}/10</span>
+        <span className={score >= 7 ? 'text-[#2D6A4F]' : score >= 5 ? 'text-amber-700' : 'text-stone-500'}>
+          {score}/10
+        </span>
       </div>
 
       <p className="mt-4 text-sm font-medium leading-6 text-[#1A1A18]/65">
-        {getIssueReason(issue, score)}
+        {reason}
       </p>
 
       <div className="mt-4 flex items-center justify-between border-t border-[#1A1A18]/10 pt-3">
@@ -449,7 +500,7 @@ function IssueCard({ issue, index, isBookmarked, onToggleBookmark, onOpenAi }) {
           ⚡ AI Deep Dive & Roadmap (Streaming / Multi-Step Agent)
         </button>
         <span className="text-[11px] font-medium text-[#1A1A18]/50">
-          Gemini 3.6 Flash
+          Groq AI • Ultra-Fast
         </span>
       </div>
     </article>
@@ -569,23 +620,47 @@ function issueMatchesFilter(issue, activeFilter) {
   return stackValues.includes(filter)
 }
 
-function getIssueScore(issue) {
+function computeIssueFit(issue, user) {
+  // If the issue already has a recorded personalized fit score in MongoDB
   const latestScore = issue.fitScores?.at?.(-1)?.score
-  if (latestScore) return latestScore
-
-  if (issue.complexity === 'beginner') return 8
-  if (issue.complexity === 'intermediate') return 6
-  return 3
-}
-
-function getIssueReason(issue, score) {
   const latestReason = issue.fitScores?.at?.(-1)?.reason
-  if (latestReason) return latestReason
+  if (latestScore && latestReason) {
+    return { score: latestScore, reason: latestReason }
+  }
 
-  const language = issue.repo?.language || issue.stacks?.[0] || 'Open source'
-  if (score >= 8) return `${language} match - strong scope for your current stack.`
-  if (score >= 5) return `${language} match - worth reviewing before you pick it up.`
-  return `${language} only - outside your current stack.`
+  const issueLanguage = issue.repo?.language || issue.stacks?.[0] || 'Open source'
+  const userStacks = (user?.stack || []).map(normalizeFilterValue).filter(Boolean)
+  const userLevel = (user?.experienceLevel || 'beginner').toLowerCase()
+  const issueComplexity = (issue.complexity || 'beginner').toLowerCase()
+
+  const issueStacks = [
+    ...(issue.stacks || []),
+    issue.repo?.language,
+  ].filter(Boolean).map(normalizeFilterValue)
+
+  // 1. Tech stack match
+  const hasStackMatch = userStacks.length === 0 || userStacks.some((us) => issueStacks.includes(us))
+
+  // 2. Experience level match
+  const hasLevelMatch = issueComplexity === userLevel
+
+  let score = 3
+  let reason = `${issueLanguage} only • Outside your preferred ${user?.stack?.length ? user.stack.join(', ') : 'tech'} stack.`
+
+  if (hasStackMatch) {
+    if (hasLevelMatch) {
+      score = issueComplexity === 'beginner' ? 9 : 8
+      reason = `${issueLanguage} match • Perfect ${issueComplexity} fit for your declared experience level.`
+    } else {
+      score = 7
+      reason = `${issueLanguage} match • Matches your tech stack, rated ${issueComplexity} complexity.`
+    }
+  } else {
+    score = hasLevelMatch ? 4 : 2
+    reason = `${issueLanguage} repo • Outside your current ${user?.stack?.length ? user.stack.join(', ') : 'target'} stack.`
+  }
+
+  return { score, reason }
 }
 
 function firstName(user) {
@@ -594,7 +669,11 @@ function firstName(user) {
 
 function formatStack(stack) {
   return stack
-    .map((item) => (item === 'node.js' ? 'Node.js' : titleCase(item)))
+    .map((item) => {
+      const lower = item.toLowerCase()
+      if (lower === 'node.js' || lower === 'nodejs') return 'Node.js'
+      return titleCase(item)
+    })
     .join(' + ')
 }
 
@@ -608,6 +687,15 @@ function formatFilterLabel(value = '') {
   if (normalized === 'javascript') return 'JavaScript'
   if (normalized === 'nodejs') return 'Node.js'
   if (normalized === 'mongodb') return 'MongoDB'
+  if (normalized === 'typescript') return 'TypeScript'
+  if (normalized === 'python') return 'Python'
+  if (normalized === 'react') return 'React'
+  if (normalized === 'vue') return 'Vue'
+  if (normalized === 'go' || normalized === 'golang') return 'Go'
+  if (normalized === 'rust') return 'Rust'
+  if (normalized === 'docker') return 'Docker'
+  if (normalized === 'graphql') return 'GraphQL'
+  if (normalized === 'postgresql') return 'PostgreSQL'
 
   return titleCase(value)
 }

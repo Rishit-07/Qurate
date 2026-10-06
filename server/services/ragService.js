@@ -118,9 +118,11 @@ export const retrieveSemanticIssues = async ({ query, user, topK = 10 }) => {
                     { stacks: regex },
                     { labels: regex },
                     { complexity: regex },
+                    { "repo.name": regex },
+                    { "repo.language": regex },
                 ]
-            }).limit(40).lean(),
-            Issue.find({}).sort({ synced_at: -1, _id: -1 }).limit(40).lean(),
+            }).limit(50).lean(),
+            Issue.find({}).sort({ synced_at: -1, _id: -1 }).limit(30).lean(),
         ]);
 
         const poolMap = new Map();

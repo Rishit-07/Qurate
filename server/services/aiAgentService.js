@@ -1,7 +1,8 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { wrapUntrustedInput } from "./promptDefenseService.js";
+import { isGroqAvailable, generateGroqChat } from "./groqService.js";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 // 1. Tool / Function Declarations for Gemini Function Calling
 const toolDeclarations = [
@@ -93,148 +94,124 @@ const executeTool = async (name, args) => {
  * to construct an end-to-end Contribution Roadmap for a developer on an open source issue.
  */
 export const runContributionAgent = async ({ issue, user }) => {
-    if (!process.env.GEMINI_API_KEY) {
-        return {
-            agentGoal: "Generate Step-by-Step Contribution Roadmap",
-            stepsExecuted: [
-                { step: 1, action: "Analyzed issue description and requirements" },
-                { step: 2, action: "Evaluated developer stack match" },
-                { step: 3, action: "Generated local contribution plan" },
-            ],
-            contributionPlan: {
-                title: `Contribution Guide for ${issue.title}`,
-                steps: [
-                    "Clone the repository and install dependencies",
-                    "Locate files relevant to the issue labels",
-                    "Implement the fix or enhancement",
-                    "Test locally and submit PR",
-                ],
-                recommendedBranch: `fix/issue-${issue.github_id || "contrib"}`,
-            },
-            toolCallsMade: [],
-        };
-    }
+    const repoName = issue.repo?.name || "Target Repo";
+    const complexity = issue.complexity || "beginner";
+    const issueType = (issue.labels || []).some(l => /bug|fix/i.test(l)) ? "bug" : "feature";
 
-    const candidateModels = [
-        "gemini-2.5-flash",
-        process.env.GEMINI_MODEL || "gemini-3.6-flash",
-    ];
+    // 1. Deterministically run agent tools
+    const executionTrace = [];
+    const toolCallsMade = [];
 
-    try {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const safeIssue = wrapUntrustedInput(JSON.stringify(issue), "issue_details");
-        const safeUser = wrapUntrustedInput(JSON.stringify(user || {}), "user_profile");
+    // Step 1: Tech stack inspection
+    executionTrace.push({
+        step: 1,
+        tool: "get_repository_tech_stack",
+        arguments: { repoName },
+        timestamp: new Date().toISOString(),
+    });
+    const stackResult = await executeTool("get_repository_tech_stack", { repoName });
+    toolCallsMade.push({
+        tool: "get_repository_tech_stack",
+        args: { repoName },
+        result: stackResult,
+    });
 
-        const initialPrompt = `You are the Qurate Multi-Step Contribution Agent.
-Goal: Formulate a comprehensive, actionable PR Contribution Roadmap for this developer to solve this issue.
-Use the available tools to inspect the repository stack, guidelines, and readiness checklist before providing the final plan.
+    // Step 2: Contributor guidelines inspection
+    executionTrace.push({
+        step: 2,
+        tool: "check_contributor_guidelines",
+        arguments: { repoName },
+        timestamp: new Date().toISOString(),
+    });
+    const guidelinesResult = await executeTool("check_contributor_guidelines", { repoName });
+    toolCallsMade.push({
+        tool: "check_contributor_guidelines",
+        args: { repoName },
+        result: guidelinesResult,
+    });
 
-Issue Details:
-${safeIssue}
+    // Step 3: PR readiness calculation
+    executionTrace.push({
+        step: 3,
+        tool: "calculate_pr_readiness_score",
+        arguments: { issueType, complexity },
+        timestamp: new Date().toISOString(),
+    });
+    const readinessResult = await executeTool("calculate_pr_readiness_score", { issueType, complexity });
+    toolCallsMade.push({
+        tool: "calculate_pr_readiness_score",
+        args: { issueType, complexity },
+        result: readinessResult,
+    });
 
-Developer Profile:
-${safeUser}`;
+    let finalReportText = `### 🚀 Actionable PR Plan for ${issue.title}\n\n` +
+        `1. **Repository Setup**: Clone repository \`${repoName}\` and install dependencies with \`npm install\`.\n` +
+        `2. **Branching Strategy**: Create feature branch \`fix/issue-${issue.github_id || "contrib"}\` from \`main\`.\n` +
+        `3. **Targeted Implementation**: Locate components matching labels \`${(issue.labels || []).join(", ") || "open-source"}\`. Implement targeted solution following ${guidelinesResult.commitFormat}.\n` +
+        `4. **Quality Checks & PR**: Run local test suites (\`${stackResult.testFramework}\`), verify checks, and open a clean draft PR.`;
 
-        let chat = null;
-        let result = null;
-        let resp = null;
+    // Synthesize final PR roadmap using Groq (Llama 3.3 70B) or Gemini
+    const synthPrompt = `You are the Qurate Autonomous Contribution Agent.
+Synthesize an actionable, high-impact PR Contribution Roadmap for this developer based on the gathered repository tools:
 
-        for (const candidate of candidateModels) {
-            try {
-                const model = genAI.getGenerativeModel({
-                    model: candidate,
-                    tools: [{ functionDeclarations: toolDeclarations }],
-                });
-                chat = model.startChat();
-                result = await chat.sendMessage(initialPrompt);
-                resp = result.response;
-                break;
-            } catch (initErr) {
-                console.warn(`[AI Agent] Model ${candidate} unavailable (${initErr.message}). Testing failover...`);
-            }
-        }
+Issue: "${issue.title}"
+Repository: "${repoName}"
+Labels: ${(issue.labels || []).join(", ") || "open source"}
+Developer Profile: Stack: ${Array.isArray(user?.stack) ? user.stack.join(", ") : "open-source"}, Level: ${user?.experienceLevel || "beginner"}
 
-        if (!resp) {
-            console.warn("[AI Agent] Cloud model unavailable, utilizing verified fallback roadmap");
-            return buildFallbackRoadmap(issue, user, "Agent service utilized structured local roadmap.");
-        }
+Inspected Tools:
+1. Tech Stack: ${JSON.stringify(stackResult)}
+2. Contributor Guidelines: ${JSON.stringify(guidelinesResult)}
+3. PR Readiness & Scope: ${JSON.stringify(readinessResult)}
 
-        const toolCallsMade = [];
-        const executionTrace = [];
-        let stepCount = 1;
+Format your response in structured Markdown:
+### 🚀 Actionable PR Plan for ${issue.title}
+1. **Environment Setup & Verification**: Specific clone and dependency installation steps.
+2. **Branching & Workflow**: Branch name and commit conventions.
+3. **Targeted Implementation Architecture**: Files, components, and logic to modify.
+4. **Validation & PR Submission**: Testing commands and pull request submission checklist.`;
 
-        // Multi-Step loop: while the model requests tool calls, execute them and return results
-        let funcCalls = typeof resp.functionCalls === "function" ? resp.functionCalls() : undefined;
+    let synthesized = false;
 
-        while (funcCalls && funcCalls.length > 0 && stepCount <= 4) {
-            for (const call of funcCalls) {
-                executionTrace.push({
-                    step: stepCount,
-                    tool: call.name,
-                    arguments: call.args,
-                    timestamp: new Date().toISOString(),
-                });
-
-                const toolResult = await executeTool(call.name, call.args);
-                toolCallsMade.push({
-                    tool: call.name,
-                    args: call.args,
-                    result: toolResult,
-                });
-
-                try {
-                    // Send tool result back to model with required object wrapper
-                    result = await chat.sendMessage([
-                        {
-                            functionResponse: {
-                                name: call.name,
-                                response: { name: call.name, content: toolResult },
-                            },
-                        },
-                    ]);
-                    resp = result.response;
-                } catch (sendErr) {
-                    console.warn(`[AI Agent Tool Return] Warning:`, sendErr.message);
-                    break;
-                }
-                stepCount++;
-            }
-            funcCalls = typeof resp.functionCalls === "function" ? resp.functionCalls() : undefined;
-        }
-
-        let finalReportText = "";
+    if (isGroqAvailable()) {
         try {
-            finalReportText = resp.text();
-        } catch {
-            finalReportText = `### 🚀 Actionable PR Plan for ${issue.title}\n\n1. Fork & Clone repository.\n2. Create feature branch: \`fix/issue-${issue.github_id || "contrib"}\`.\n3. Implement proposed changes according to guidelines.\n4. Run test suites and verify build passes.`;
+            const groqOutput = await generateGroqChat({
+                messages: [
+                    { role: "system", content: "You are the Qurate Multi-Step Contribution Agent specializing in open-source engineering." },
+                    { role: "user", content: synthPrompt }
+                ],
+            });
+            if (groqOutput && groqOutput.length > 50) {
+                finalReportText = groqOutput;
+                synthesized = true;
+            }
+        } catch (groqErr) {
+            console.warn("[AI Agent] Groq failover notice:", groqErr.message);
         }
-
-        return {
-            agentGoal: `Autonomous Contribution Roadmap for ${issue.title}`,
-            executionTrace,
-            toolCallsMade,
-            finalReport: finalReportText,
-            totalSteps: stepCount - 1,
-        };
-    } catch (apiErr) {
-        console.warn("Gemini agent error, using fallback roadmap:", apiErr.message);
-        return {
-            agentGoal: `Contribution Roadmap for ${issue.title}`,
-            executionTrace: [
-                { step: 1, tool: "get_repository_tech_stack", arguments: { repoName: issue.repo?.name || "Target Repo" }, timestamp: new Date().toISOString() },
-                { step: 2, tool: "check_contributor_guidelines", arguments: { repoName: issue.repo?.name || "Target Repo" }, timestamp: new Date().toISOString() },
-                { step: 3, tool: "calculate_pr_readiness_score", arguments: { issueType: "bug", complexity: "beginner" }, timestamp: new Date().toISOString() },
-            ],
-            toolCallsMade: [
-                { tool: "get_repository_tech_stack", args: { repoName: issue.repo?.name || "Target Repo" }, result: { buildTool: "Vite", testFramework: "Jest" } },
-                { tool: "check_contributor_guidelines", args: { repoName: issue.repo?.name || "Target Repo" }, result: { branching: `fix/issue-${issue.github_id || "contrib"}` } },
-            ],
-            finalReport: `### 🚀 Autonomous Contribution Plan for ${issue.title}\n\n` +
-                `1. **Repository Setup**: Clone repository \`${issue.repo?.name || "Target Repo"}\` and install dependencies with \`npm install\`.\n` +
-                `2. **Branching Strategy**: Branch from \`main\` as \`fix/issue-${issue.github_id || "contrib"}\`.\n` +
-                `3. **Implementation**: Locate relevant files for \`${issue.title}\`, apply scoped fix, and follow conventional commit guidelines.\n` +
-                `4. **Quality Checks**: Run tests and linting before submitting pull request.`,
-            totalSteps: 3,
-        };
     }
+
+    if (!synthesized && process.env.GEMINI_API_KEY) {
+        try {
+            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({
+                model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+            });
+
+            const aiResult = await model.generateContent(synthPrompt);
+            const generated = aiResult?.response?.text?.();
+            if (generated) {
+                finalReportText = generated;
+            }
+        } catch (apiErr) {
+            console.warn("[AI Agent] Gemini synthesis notice (utilizing structured fallback):", apiErr.message);
+        }
+    }
+
+    return {
+        agentGoal: `Autonomous Contribution Roadmap for ${issue.title}`,
+        executionTrace,
+        toolCallsMade,
+        finalReport: finalReportText,
+        totalSteps: 3,
+    };
 };

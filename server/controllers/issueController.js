@@ -46,24 +46,89 @@ export const syncIssues = async (req, res) => {
 
 export const getIssues = async (req, res) => {
     try {
-        const { stack, complexity, page = 1 } = req.query;
+        const { stack, complexity, page = 1, limit = 10, userStack, userLevel } = req.query;
         const filter = {};
 
-        if (stack) filter.stacks = { $in: stack.split(",") };
-        if (complexity) filter.complexity = complexity;
+        // Accurate tech stack filtering: checks both issue.stacks array and issue.repo.language
+        if (stack && stack.toLowerCase() !== 'all') {
+            const rawStackItems = stack.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+            const regexList = rawStackItems.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, "i"));
+            filter.$or = [
+                { stacks: { $in: regexList } },
+                { "repo.language": { $in: regexList } },
+            ];
+        }
 
-        const issues = await Issue.find(filter)
-            .sort({ synced_at: -1 })
-            .limit(10)
-            .skip((page - 1) * 10);
+        // Accurate complexity / level filtering
+        if (complexity && complexity.toLowerCase() !== 'all') {
+            filter.complexity = complexity.trim().toLowerCase();
+        }
+
+        const limitNum = Math.min(Math.max(Number(limit) || 10, 1), 50);
+        const pageNum = Math.max(Number(page) || 1, 1);
+        const skipNum = (pageNum - 1) * limitNum;
 
         const total = await Issue.countDocuments(filter);
+
+        const userStacks = userStack ? userStack.split(",").map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+        const userLevelNorm = userLevel ? userLevel.trim().toLowerCase() : "";
+
+        let issues;
+
+        // If user profile preferences (stack or experience level) are provided and we're on "All" or open browse,
+        // rank and sort matching issues to the top of the feed!
+        if (userStacks.length > 0 || userLevelNorm) {
+            const pipeline = [
+                { $match: filter },
+                {
+                    $addFields: {
+                        stackMatchScore: {
+                            $cond: [
+                                {
+                                    $or: [
+                                        { $gt: [{ $size: { $setIntersection: [{ $ifNull: ["$stacks", []] }, userStacks] } }, 0] },
+                                        { $in: [{ $toLower: { $ifNull: ["$repo.language", ""] } }, userStacks] }
+                                    ]
+                                },
+                                10,
+                                0
+                            ]
+                        },
+                        levelMatchScore: {
+                            $cond: [
+                                { $eq: ["$complexity", userLevelNorm] },
+                                5,
+                                0
+                            ]
+                        }
+                    }
+                },
+                {
+                    $sort: {
+                        stackMatchScore: -1,
+                        levelMatchScore: -1,
+                        synced_at: -1,
+                        _id: -1
+                    }
+                },
+                { $skip: skipNum },
+                { $limit: limitNum }
+            ];
+
+            issues = await Issue.aggregate(pipeline);
+        } else {
+            issues = await Issue.find(filter)
+                .sort({ synced_at: -1, _id: -1 })
+                .skip(skipNum)
+                .limit(limitNum)
+                .lean();
+        }
 
         return res.status(200).json({
             issues,
             total,
-            page: Number(page),
-            hasMore: page * 10 < total,
+            page: pageNum,
+            hasMore: pageNum * limitNum < total,
         });
 
     } catch (err) {

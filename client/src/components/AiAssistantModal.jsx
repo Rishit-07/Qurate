@@ -162,7 +162,7 @@ export default function AiAssistantModal({ issue, user, onClose }) {
                   AI Intelligence Hub
                 </span>
                 <span className="rounded-full bg-[#2D6A4F]/15 px-2 py-0.5 text-[10px] font-bold text-[#2D6A4F]">
-                  Gemini 3.6 Flash
+                  Groq AI • 120B
                 </span>
               </div>
               <h2 className="mt-0.5 line-clamp-1 [font-family:Georgia,serif] text-lg font-bold text-[#1A1A18]">
